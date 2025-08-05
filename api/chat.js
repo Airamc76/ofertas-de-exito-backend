@@ -1,65 +1,53 @@
+import express from 'express';
 import axios from 'axios';
+import cors from 'cors';
+import dotenv from 'dotenv';
+dotenv.config();
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método no permitido' });
-  }
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  const { historial } = req.body;
+app.use(cors());
+app.use(express.json());
 
-  if (!historial || !Array.isArray(historial) || historial.length === 0) {
+app.post('/api/chat', async (req, res) => {
+  const { mensaje, historial } = req.body;
+
+  if (!mensaje) {
     return res.status(400).json({ error: 'Mensaje requerido' });
   }
 
   try {
-    const openaiResponse = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Eres un experto en redacción publicitaria y ofertas irresistibles. Responde de forma conversacional, útil y natural.',
-          },
-          ...historial,
-        ],
-        max_tokens: 800,
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-      }
-    );
-
-    const respuesta = openaiResponse.data.choices[0].message.content;
-    return res.status(200).json({ fuente: 'openai', respuesta });
-  } catch (error) {
-    console.warn('Fallo OpenAI. Usando Cohere como respaldo.');
-
-    try {
-      const ultimoMensaje = historial[historial.length - 1].content;
-      const cohereResponse = await axios.post(
-        'https://api.cohere.ai/v1/chat',
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo',
+      messages: [
         {
-          message: ultimoMensaje,
-          connectors: [],
+          role: 'system',
+          content: 'Eres un experto en redacción publicitaria y ofertas irresistibles. Responde de forma conversacional, útil y natural.'
         },
+        ...(historial || []),
         {
-          headers: {
-            Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
+          role: 'user',
+          content: mensaje
         }
-      );
+      ],
+      max_tokens: 800
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+      }
+    });
 
-      const respuesta = cohereResponse.data.text;
-      return res.status(200).json({ fuente: 'cohere', respuesta });
-    } catch (err) {
-      console.error('Fallo Cohere:', err);
-      return res.status(500).json({ error: 'Error interno del servidor' });
-    }
+    const respuesta = response.data.choices[0].message.content;
+    res.json({ fuente: 'openai', respuesta });
+
+  } catch (error) {
+    console.warn('Fallo OpenAI:', error?.response?.data || error.message);
+    res.status(500).json({ error: 'Error al procesar la solicitud.' });
   }
-}
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+});
