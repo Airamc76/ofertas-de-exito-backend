@@ -23,14 +23,15 @@ app.post('/api/chat', async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: 'Eres un experto en redacción publicitaria y ofertas irresistibles. Responde de forma conversacional, útil y natural, como un especialista en marketing que asesora al usuario para vender más.',
+            content: 'Eres una IA llamada Sara, experta en redacción publicitaria, ventas, marketing digital y ofertas irresistibles. Tu estilo es conversacional, claro, persuasivo, cálido y profesional. Siempre ayudas a que el usuario mejore sus textos, ofertas o estrategias, sin divagar ni dar respuestas genéricas.',
           },
           {
             role: 'user',
             content: mensaje,
-          },
+          }
         ],
         max_tokens: 800,
+        temperature: 0.8,
       },
       {
         headers: {
@@ -40,17 +41,23 @@ app.post('/api/chat', async (req, res) => {
       }
     );
 
-    return res.json({ fuente: 'openai', respuesta: openaiResponse.data.choices[0].message.content });
+    return res.json({
+      fuente: 'openai',
+      respuesta: openaiResponse.data.choices[0].message.content.trim()
+    });
   } catch (error) {
-    console.warn('Fallo OpenAI. Usando Cohere como respaldo.');
+    console.warn('❌ OpenAI falló. Usando Cohere como respaldo...');
   }
 
+  // Fallback a Cohere
   try {
     const cohereResponse = await axios.post(
       'https://api.cohere.ai/v1/chat',
       {
         message: mensaje,
         connectors: [],
+        chat_history: [],
+        temperature: 0.8,
       },
       {
         headers: {
@@ -60,14 +67,16 @@ app.post('/api/chat', async (req, res) => {
       }
     );
 
-    return res.json({ fuente: 'cohere', respuesta: cohereResponse.data.text });
+    return res.json({
+      fuente: 'cohere',
+      respuesta: cohereResponse.data.text.trim()
+    });
   } catch (err) {
+    console.error('❌ Cohere también falló.', err.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
 
 app.listen(PUERTO, () => {
-  console.log(`Servidor escuchando en puerto ${PUERTO}`);
+  console.log(`✅ Servidor corriendo en puerto ${PUERTO}`);
 });
-
-
