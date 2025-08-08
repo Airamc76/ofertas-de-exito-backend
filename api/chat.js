@@ -13,9 +13,9 @@ app.use(express.json());
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COHERE_API_KEY = process.env.COHERE_API_KEY;
 
-// ===== Historial por usuario (memoria RAM) =====
+// ===== Memoria por usuario (en RAM del runtime) =====
 const sessions = new Map(); // { userId: [{role, content}] }
-const MAX_TURNS = 15;       // últimos 15 turnos (user+assistant)
+const MAX_TURNS = 15;
 
 function getHistory(userId) {
   if (!userId) return [];
@@ -32,39 +32,49 @@ function saveTurn(userId, userMsg, assistantMsg) {
   sessions.set(userId, hist);
 }
 
-const withTimeout = (promise, ms = 25_000) =>
+// Timeout helper
+const withTimeout = (promise, ms = 25000) =>
   Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
-// Health (opcional): GET /api/chat
-app.get('/', (_req, res) => res.json({ ok: true }));
+// Healthcheck -> GET /api/chat
+app.get('/', (_req, res) => res.json({ ok: true, service: 'chat', t: Date.now() }));
 
-// === OJO: rutas en raíz porque el archivo ya está en /api/chat ===
-
-// Chat principal -> POST /api/chat
+// ================== CHAT ==================
+// IMPORTANT: rutas en raíz porque este archivo ya vive en /api/chat
 app.post('/', async (req, res) => {
-  const { mensaje, userId } = req.body;
+  const { mensaje, userId, __echo } = req.body || {};
+  console.log('>> /api/chat IN', { hasMsg: !!mensaje, userId });
+
+  // 0) Echo de diagnóstico: responde al instante para descartar routing
+  if (__echo) {
+    console.log('<< /api/chat ECHO');
+    return res.json({ ok: true, echo: req.body, where: '/api/chat' });
+  }
+
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
   const history = getHistory(userId);
 
+  // 1) OpenAI principal
   try {
     const messages = [
       {
         role: 'system',
         content: `
-Eres **Alma**, una IA experta en redacción publicitaria, ventas, marketing digital y creación de ofertas irresistibles.
-Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en español neutro.
+Eres **Alma**, IA experta en copywriting, ventas, marketing digital y ofertas irresistibles.
+Estilo: conversacional, claro, persuasivo, cálido y profesional. Español neutro.
 - Hook breve
 - Beneficios con ✅
 - Pasos numerados
 - CTA + urgencia
 - Cierre con próxima acción
-        `
+      `.trim()
       },
       ...history,
       { role: 'user', content: mensaje }
     ];
 
+    console.log('.. calling OpenAI');
     const openaiResponse = await withTimeout(
       axios.post(
         'https://api.openai.com/v1/chat/completions',
@@ -72,31 +82,30 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
           model: process.env.MODEL_OPENAI || 'gpt-4o-mini',
           messages,
           max_tokens: 900,
-          temperature: 0.8,
+          temperature: 0.8
         },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENAI_API_KEY}`,
-          },
-        }
-      )
+        { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` } }
+      ),
+      25000
     );
 
     const reply = openaiResponse?.data?.choices?.[0]?.message?.content?.trim() || '';
+    console.log('<< OpenAI OK', reply.slice(0, 60));
     saveTurn(userId, mensaje, reply);
-    return res.json({ fuente: 'openai', respuesta: reply });
+    return res.json({ fuente: 'openai', modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini', respuesta: reply });
   } catch (error) {
-    console.warn('❌ OpenAI falló. Usando Cohere...', error?.message);
+    console.warn('!! OpenAI error', error?.response?.status, error?.message);
   }
 
+  // 2) Cohere fallback
   try {
     const cohereHistory = [
       { role: 'SYSTEM', message: 'Eres Alma. Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
       ...history.map(m => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
-      { role: 'USER', message: mensaje },
+      { role: 'USER', message: mensaje }
     ];
 
+    console.log('.. calling Cohere');
     const cohereResponse = await withTimeout(
       axios.post(
         'https://api.cohere.ai/v1/chat',
@@ -104,15 +113,11 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
           model: process.env.MODEL_COHERE || 'command-r-plus',
           message: mensaje,
           temperature: 0.8,
-          chat_history: cohereHistory,
+          chat_history: cohereHistory
         },
-        {
-          headers: {
-            Authorization: `Bearer ${COHERE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      )
+        { headers: { Authorization: `Bearer ${COHERE_API_KEY}`, 'Content-Type': 'application/json' } }
+      ),
+      25000
     );
 
     const texto =
@@ -120,26 +125,27 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
       cohereResponse?.data?.message?.content?.[0]?.text?.trim() ||
       '';
 
+    console.log('<< Cohere OK', (texto || '').slice(0, 60));
     saveTurn(userId, mensaje, texto);
-    return res.json({ fuente: 'cohere', respuesta: texto });
+    return res.json({ fuente: 'cohere', modelo: process.env.MODEL_COHERE || 'command-r-plus', respuesta: texto });
   } catch (err) {
-    console.error('❌ Cohere también falló.', err?.message);
+    console.error('!! Cohere error', err?.response?.status, err?.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
 
-// Historial -> POST /api/chat/history
+// ================== HISTORY/RESET ==================
 app.post('/history', (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId requerido' });
   return res.json({ userId, history: getHistory(userId) });
 });
 
-// Reset -> POST /api/chat/reset
 app.post('/reset', (req, res) => {
   const { userId } = req.body || {};
   if (userId) sessions.delete(userId);
   return res.json({ ok: true });
 });
 
+// Exportar para Vercel (no usar app.listen en serverless)
 export default serverless(app);
