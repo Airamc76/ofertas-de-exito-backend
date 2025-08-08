@@ -10,11 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+// ENV
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COHERE_API_KEY = process.env.COHERE_API_KEY;
 
-// Upstash Redis
+// Redis (Upstash)
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -25,25 +25,38 @@ const historyKey = (userId) => `alma:history:${userId}`;
 
 async function getHistory(userId) {
   if (!userId) return [];
-  const arr = await redis.lrange(historyKey(userId), 0, -1);
-  return (arr || []).map(s => JSON.parse(s));
+  try {
+    const arr = await redis.lrange(historyKey(userId), 0, -1);
+    return (arr || []).map((s) => JSON.parse(s));
+  } catch (e) {
+    console.error('Redis getHistory error:', e?.message);
+    return [];
+  }
 }
 async function saveTurn(userId, userMsg, assistantMsg) {
   if (!userId) return;
-  const key = historyKey(userId);
-  const ops = [];
-  if (userMsg)      ops.push(redis.rpush(key, JSON.stringify({ role: 'user', content: userMsg })));
-  if (assistantMsg) ops.push(redis.rpush(key, JSON.stringify({ role: 'assistant', content: assistantMsg })));
-  await Promise.all(ops);
-  await redis.ltrim(key, -MAX_TURNS * 2, -1);
-  await redis.expire(key, TTL_SECONDS);
+  try {
+    const key = historyKey(userId);
+    const ops = [];
+    if (userMsg)      ops.push(redis.rpush(key, JSON.stringify({ role: 'user', content: userMsg })));
+    if (assistantMsg) ops.push(redis.rpush(key, JSON.stringify({ role: 'assistant', content: assistantMsg })));
+    await Promise.all(ops);
+    await redis.ltrim(key, -MAX_TURNS * 2, -1);
+    await redis.expire(key, TTL_SECONDS);
+  } catch (e) {
+    console.error('Redis saveTurn error:', e?.message);
+  }
 }
 
-const withTimeout = (promise, ms = 25000) =>
+const withTimeout = (promise, ms = 15000) =>
   Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
-app.post('/api/chat', async (req, res) => {
-  const { mensaje, userId } = req.body;
+// health check -> GET /api/chat/ping
+app.get('/ping', (_req, res) => res.json({ ok: true, t: Date.now() }));
+
+// CHAT -> POST /api/chat
+app.post('/', async (req, res) => {
+  const { mensaje, userId } = req.body || {};
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
   const history = await getHistory(userId);
@@ -54,14 +67,14 @@ app.post('/api/chat', async (req, res) => {
       {
         role: 'system',
         content: `
-Eres **Alma**, una IA experta en redacción publicitaria, ventas, marketing digital y creación de ofertas irresistibles.
-Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en español neutro.
-- Abre con un hook breve.
-- Beneficios con ✅.
-- Pasos numerados.
-- CTA claro y urgencia breve.
-- Cierra con próxima acción.
-        `.trim(),
+Eres **Alma**, IA experta en copywriting, ventas y ofertas irresistibles. 
+Estilo conversacional, claro y persuasivo. 
+- Hook breve
+- Beneficios con ✅
+- Pasos numerados
+- CTA y urgencia breve
+- Cierre con próxima acción
+`.trim()
       },
       ...history,
       { role: 'user', content: mensaje }
@@ -84,14 +97,14 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
     await saveTurn(userId, mensaje, reply);
     return res.json({ fuente: 'openai', respuesta: reply });
   } catch (error) {
-    console.warn('❌ OpenAI falló. Usando Cohere...', error?.message);
+    console.warn('OpenAI error:', error?.message);
   }
 
-  // Cohere fallback
+  // Cohere (fallback)
   try {
     const cohereHistory = [
       { role: 'SYSTEM', message: 'Eres Alma. Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
-      ...history.map(m => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
+      ...history.map((m) => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
       { role: 'USER', message: mensaje },
     ];
 
@@ -108,35 +121,37 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
       )
     );
 
-    const texto = cohereResponse?.data?.text?.trim()
-      || cohereResponse?.data?.message?.content?.[0]?.text?.trim()
-      || '';
+    const texto =
+      cohereResponse?.data?.text?.trim() ||
+      cohereResponse?.data?.message?.content?.[0]?.text?.trim() ||
+      '';
 
     await saveTurn(userId, mensaje, texto);
     return res.json({ fuente: 'cohere', respuesta: texto });
   } catch (err) {
-    console.error('❌ Cohere también falló.', err?.message);
+    console.error('Cohere error:', err?.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
 
-// Helpers para probar
-app.post('/api/history', async (req, res) => {
+// Historial -> POST /api/chat/history
+app.post('/history', async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId requerido' });
   const hist = await getHistory(userId);
   res.json({ userId, history: hist });
 });
 
-app.post('/api/reset', async (req, res) => {
+// Reset -> POST /api/chat/reset
+app.post('/reset', async (req, res) => {
   const { userId } = req.body || {};
   if (userId) await redis.del(historyKey(userId));
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Servidor corriendo en puerto ${PORT}`);
-});
+// 👉 En Vercel NO se usa app.listen; exportamos el app:
+export default app;
+
 
 
 
