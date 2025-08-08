@@ -3,6 +3,7 @@ import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Redis } from '@upstash/redis';
+import serverless from 'serverless-http';
 
 dotenv.config();
 
@@ -10,11 +11,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ENV
+// === ENV ===
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COHERE_API_KEY = process.env.COHERE_API_KEY;
 
-// Redis (Upstash)
+// === Redis (Upstash) ===
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
@@ -48,36 +49,36 @@ async function saveTurn(userId, userMsg, assistantMsg) {
   }
 }
 
-const withTimeout = (promise, ms = 15000) =>
-  Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+const withTimeout = (p, ms = 15000) =>
+  Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
 
-// health check -> GET /api/chat/ping
+// ---- Healthcheck -> GET /api/chat/ping
 app.get('/ping', (_req, res) => res.json({ ok: true, t: Date.now() }));
 
-// CHAT -> POST /api/chat
+// ---- Chat -> POST /api/chat
 app.post('/', async (req, res) => {
   const { mensaje, userId } = req.body || {};
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
   const history = await getHistory(userId);
 
-  // OpenAI primero
+  // 1) OpenAI primero
   try {
     const messages = [
       {
         role: 'system',
         content: `
-Eres **Alma**, IA experta en copywriting, ventas y ofertas irresistibles. 
-Estilo conversacional, claro y persuasivo. 
+Eres **Alma**, IA experta en copywriting, ventas y ofertas irresistibles.
+Estilo: conversacional, claro y persuasivo.
 - Hook breve
 - Beneficios con ✅
 - Pasos numerados
 - CTA y urgencia breve
 - Cierre con próxima acción
-`.trim()
+`.trim(),
       },
       ...history,
-      { role: 'user', content: mensaje }
+      { role: 'user', content: mensaje },
     ];
 
     const openaiResponse = await withTimeout(
@@ -100,7 +101,7 @@ Estilo conversacional, claro y persuasivo.
     console.warn('OpenAI error:', error?.message);
   }
 
-  // Cohere (fallback)
+  // 2) Cohere fallback
   try {
     const cohereHistory = [
       { role: 'SYSTEM', message: 'Eres Alma. Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
@@ -134,7 +135,7 @@ Estilo conversacional, claro y persuasivo.
   }
 });
 
-// Historial -> POST /api/chat/history
+// ---- Historial -> POST /api/chat/history
 app.post('/history', async (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId requerido' });
@@ -142,16 +143,12 @@ app.post('/history', async (req, res) => {
   res.json({ userId, history: hist });
 });
 
-// Reset -> POST /api/chat/reset
+// ---- Reset -> POST /api/chat/reset
 app.post('/reset', async (req, res) => {
   const { userId } = req.body || {};
   if (userId) await redis.del(historyKey(userId));
   res.json({ ok: true });
 });
 
-// 👉 En Vercel NO se usa app.listen; exportamos el app:
-export default app;
-
-
-
-
+// Exportar como handler serverless para Vercel
+export default serverless(app);
