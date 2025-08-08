@@ -105,7 +105,7 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
     console.warn('❌ OpenAI falló. Usando Cohere como respaldo...', error?.message);
   }
 
-  // 2) Cohere (respaldo)
+  // 2) Cohere (respaldo) con historial
   try {
     const cohereHistory = [
       { role: 'SYSTEM', message: `Eres Alma (copywriting/ofertas irresistibles). Hook breve, bullets ✅, pasos numerados, CTA y urgencia. Español neutro.` },
@@ -148,19 +148,17 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
   }
 });
 
-// Ver historial -> POST /api/history
+// (Opcional) ver/borrar historial por usuario
 app.post('/api/history', (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId requerido' });
   return res.json({ userId, history: getHistory(userId) });
 });
-
-// Reset historial -> POST /api/reset
 app.post('/api/reset', (req, res) => {
   const { userId } = req.body || {};
   if (userId) sessions.delete(userId);
   return res.json({ ok: true });
 });
 
-// En Vercel NO se usa app.listen; exportamos el handler serverless
+// En Vercel: NO usar app.listen; exportamos handler serverless
 export default serverless(app);
