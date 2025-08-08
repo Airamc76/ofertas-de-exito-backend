@@ -32,20 +32,21 @@ function saveTurn(userId, userMsg, assistantMsg) {
   sessions.set(userId, hist);
 }
 
-// Utilidad de timeout
 const withTimeout = (promise, ms = 25_000) =>
   Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
-// ================== RUTAS ==================
+// Health (opcional): GET /api/chat
+app.get('/', (_req, res) => res.json({ ok: true }));
+
+// === OJO: rutas en raíz porque el archivo ya está en /api/chat ===
 
 // Chat principal -> POST /api/chat
-app.post('/api/chat', async (req, res) => {
+app.post('/', async (req, res) => {
   const { mensaje, userId } = req.body;
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
   const history = getHistory(userId);
 
-  // 1) OpenAI (principal)
   try {
     const messages = [
       {
@@ -53,23 +54,11 @@ app.post('/api/chat', async (req, res) => {
         content: `
 Eres **Alma**, una IA experta en redacción publicitaria, ventas, marketing digital y creación de ofertas irresistibles.
 Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en español neutro.
-
-# Estilo y formato (hazlo SIEMPRE)
-- Abre con un **hook** breve (1–2 líneas).
-- Beneficios con viñetas y ✅.
-- **Pasos numerados** para instrucciones.
-- **CTA** claro y línea de **urgencia/escasez** realista.
-- Cierra reforzando la transformación y la próxima acción.
-
-# Pautas
-- Da outputs accionables (plantillas, ejemplos, microcopys).
-- Evita relleno. Pide solo lo mínimo si faltan datos.
-- Ofrece “próximos pasos” concretos cuando aplique.
-
-# Micro-plantillas
-- CTA: "➡️ *[Acción]* ahora" / "🔒 *[Beneficio]* aquí".
-- Urgencia: "⏳ Disponible hasta *[fecha/límite]*" / "Quedan *[X]* cupos".
-- Beneficios: "✅ *[Beneficio]* — *[Por qué importa]*".
+- Hook breve
+- Beneficios con ✅
+- Pasos numerados
+- CTA + urgencia
+- Cierre con próxima acción
         `
       },
       ...history,
@@ -96,19 +85,14 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
 
     const reply = openaiResponse?.data?.choices?.[0]?.message?.content?.trim() || '';
     saveTurn(userId, mensaje, reply);
-    return res.json({
-      fuente: 'openai',
-      modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini',
-      respuesta: reply
-    });
+    return res.json({ fuente: 'openai', respuesta: reply });
   } catch (error) {
-    console.warn('❌ OpenAI falló. Usando Cohere como respaldo...', error?.message);
+    console.warn('❌ OpenAI falló. Usando Cohere...', error?.message);
   }
 
-  // 2) Cohere (respaldo) con historial
   try {
     const cohereHistory = [
-      { role: 'SYSTEM', message: `Eres Alma (copywriting/ofertas irresistibles). Hook breve, bullets ✅, pasos numerados, CTA y urgencia. Español neutro.` },
+      { role: 'SYSTEM', message: 'Eres Alma. Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
       ...history.map(m => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
       { role: 'USER', message: mensaje },
     ];
@@ -137,28 +121,25 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en es
       '';
 
     saveTurn(userId, mensaje, texto);
-    return res.json({
-      fuente: 'cohere',
-      modelo: process.env.MODEL_COHERE || 'command-r-plus',
-      respuesta: texto
-    });
+    return res.json({ fuente: 'cohere', respuesta: texto });
   } catch (err) {
     console.error('❌ Cohere también falló.', err?.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
 });
 
-// (Opcional) ver/borrar historial por usuario
-app.post('/api/history', (req, res) => {
+// Historial -> POST /api/chat/history
+app.post('/history', (req, res) => {
   const { userId } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId requerido' });
   return res.json({ userId, history: getHistory(userId) });
 });
-app.post('/api/reset', (req, res) => {
+
+// Reset -> POST /api/chat/reset
+app.post('/reset', (req, res) => {
   const { userId } = req.body || {};
   if (userId) sessions.delete(userId);
   return res.json({ ok: true });
 });
 
-// En Vercel: NO usar app.listen; exportamos handler serverless
 export default serverless(app);
