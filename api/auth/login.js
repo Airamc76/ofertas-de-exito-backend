@@ -26,27 +26,59 @@ export default async function handler(req, res) {
 
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
+    console.log('[login] body:', { email, hasPassword: !!password });
 
-    const userId = await redis.get(keyByEmail(email));
-    if (!userId) return res.status(401).json({ error: 'Credenciales inválidas' });
-
-    const raw = await redis.get(keyById(userId));
-    if (!raw) {
-      // Caso de registro incompleto: email->id existe pero falta id->JSON
-      console.error('login missing user JSON for', userId);
-      return res.status(500).json({ error: 'Perfil incompleto en Redis. Vuelve a registrarte.' });
+    if (!email || !password) {
+      console.log('[login] faltan datos');
+      return res.status(400).json({ error: 'email y password requeridos' });
     }
 
-    const user = JSON.parse(raw);
+    // 1) buscar userId por email
+    const emailKey = keyByEmail(email);
+    const userId = await redis.get(emailKey);
+    console.log('[login] emailKey:', emailKey, '-> userId:', userId);
+
+    if (!userId) {
+      console.log('[login] email no encontrado');
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // 2) cargar usuario por id
+    const raw = await redis.get(keyById(userId));
+    console.log('[login] raw user length:', raw ? String(raw).length : 'null');
+
+    if (!raw) {
+      console.log('[login] userId sin registro');
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    let user;
+    try {
+      user = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      console.error('[login] JSON.parse error:', e?.message);
+      return res.status(500).json({ error: 'Error en el servidor' });
+    }
+
+    // 3) comparar password
     const ok = await bcrypt.compare(password, user.passwordHash || '');
-    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+    console.log('[login] bcrypt.compare =>', ok);
 
+    if (!ok) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // 4) firmar token
     const token = signToken({ userId, email: user.email });
-    return res.status(200).json({ ok: true, token, user: { userId, email: user.email } });
+    console.log('[login] token emitido OK');
 
+    return res.status(200).json({
+      ok: true,
+      token,
+      user: { userId, email: user.email },
+    });
   } catch (e) {
-    console.error('login error:', e?.message);
+    console.error('[login] ERROR:', e?.message, e);
     return res.status(500).json({ error: 'Error en el servidor' });
   }
 }
