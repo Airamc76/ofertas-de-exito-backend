@@ -1,43 +1,91 @@
-// /api/chat.js — Handler plano para Vercel con el formato de respuesta de Alma
+import express from 'express';
 import axios from 'axios';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const COHERE_API_KEY = process.env.COHERE_API_KEY;
+dotenv.config();
 
-// Helpers
-const withTimeout = (p, ms = 25000) =>
-  Promise.race([p, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))]);
+const app = express();
 
-function setCORS(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// CORS: incluye Authorization y maneja preflight
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*'); // o tu dominio del front si lo quieres restringir
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  next();
+});
+
+app.use(cors());
+app.use(express.json());
+
+const PUERTO = process.env.PORT || 3000;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const COHERE_API_KEY = process.env.COHERE_API_KEY;
+const JWT_SECRET = process.env.JWT_SECRET || 'change-me';
+
+// ===== Historial por usuario (memoria RAM) =====
+const sessions = new Map(); // { userId: [{role, content}] }
+const MAX_TURNS = 15;       // últimos 15 turnos (user+assistant)
+
+function getHistory(userId) {
+  if (!userId) return [];
+  return sessions.get(userId) || [];
+}
+function saveTurn(userId, userMsg, assistantMsg) {
+  if (!userId) return;
+  const hist = sessions.get(userId) || [];
+  if (userMsg)      hist.push({ role: 'user', content: userMsg });
+  if (assistantMsg) hist.push({ role: 'assistant', content: assistantMsg });
+  const excess = Math.max(0, hist.length - MAX_TURNS * 2);
+  if (excess) hist.splice(0, excess);
+  sessions.set(userId, hist);
 }
 
-export default async function handler(req, res) {
-  setCORS(res);
+// Utilidad de timeout
+const withTimeout = (promise, ms = 25_000) =>
+  Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
-  // Preflight
-  if (req.method === 'OPTIONS') return res.status(204).end();
+// health
+app.get('/api/chat/ping', (req, res) => {
+  res.json({ ok: true, route: '/api/chat/ping', method: 'GET' });
+});
 
-  // Health
-  if (req.method === 'GET') return res.status(200).json({ ok: true, service: 'chat', t: Date.now() });
-
-  // Solo POST
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
-
-  const { mensaje, __echo } = req.body || {};
-  if (__echo) return res.status(200).json({ ok: true, where: '/api/chat' });
+// CHAT -> POST /api/chat
+app.post('/api/chat', async (req, res) => {
+  const { mensaje, userId: bodyUserId } = req.body || {};
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
-  // 1) OpenAI (principal) — MISMO ESTILO QUE ME MOSTRASTE
+  // 1) Intentar leer el token (opcional)
+  let tokenUser = null;
+  const auth = req.headers.authorization || '';
+  if (auth.startsWith('Bearer ')) {
+    const token = auth.slice(7);
+    try {
+      tokenUser = jwt.verify(token, JWT_SECRET); // { userId, email, ... }
+    } catch (_) {
+      // Token inválido o expirado; seguimos como anónimo
+    }
+  }
+
+  // 2) Determinar el userId efectivo
+  const effectiveUserId = tokenUser?.userId || bodyUserId;
+  if (!effectiveUserId) {
+    // por seguridad: si no hay userId ni token, no guardamos historial
+    return res.status(400).json({ error: 'userId requerido (o token válido)' });
+  }
+
+  const history = getHistory(effectiveUserId);
+
+  // 3) OpenAI (principal)
   try {
     const messages = [
       {
         role: 'system',
         content: `
 Eres **Alma**, una IA experta en redacción publicitaria, ventas, marketing digital y creación de ofertas irresistibles.
-Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde SIEMPRE en español neutro.
+Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en español neutro.
 
 # Estilo y formato (hazlo SIEMPRE)
 - Abre con un **hook** breve (1–2 líneas).
@@ -57,64 +105,76 @@ Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde SIEMP
 - Beneficios: "✅ *[Beneficio]* — *[Por qué importa]*".
         `.trim()
       },
+      ...history,
       { role: 'user', content: mensaje }
     ];
 
-    const oai = await withTimeout(
+    const openaiResponse = await withTimeout(
       axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
           model: process.env.MODEL_OPENAI || 'gpt-4o-mini',
           messages,
           max_tokens: 900,
-          temperature: 0.8
+          temperature: 0.8,
         },
         { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` } }
-      ),
-      25000
+      )
     );
 
-    const reply = oai?.data?.choices?.[0]?.message?.content?.trim() || '';
-    return res.status(200).json({
-      fuente: 'openai',
-      modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini',
-      respuesta: reply
-    });
+    const reply = openaiResponse?.data?.choices?.[0]?.message?.content?.trim() || '';
+    saveTurn(effectiveUserId, mensaje, reply);
+    return res.json({ fuente: 'openai', modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini', respuesta: reply });
   } catch (error) {
-    console.warn('OpenAI error:', error?.response?.status, error?.message);
+    console.warn('❌ OpenAI falló. Usando Cohere como respaldo...', error?.message);
   }
 
-  // 2) Cohere (fallback)
+  // 4) Cohere (respaldo)
   try {
-    const ch = await withTimeout(
+    const cohereHistory = [
+      { role: 'SYSTEM', message: 'Eres Alma (copywriting/ofertas irresistibles). Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
+      ...history.map(m => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
+      { role: 'USER', message: mensaje },
+    ];
+
+    const cohereResponse = await withTimeout(
       axios.post(
         'https://api.cohere.ai/v1/chat',
         {
           model: process.env.MODEL_COHERE || 'command-r-plus',
           message: mensaje,
           temperature: 0.8,
-          chat_history: [
-            { role: 'SYSTEM', message: 'Eres Alma. Hook, bullets ✅, pasos numerados, CTA y urgencia. Español neutro.' },
-            { role: 'USER', message: mensaje }
-          ]
+          chat_history: cohereHistory,
         },
         { headers: { Authorization: `Bearer ${COHERE_API_KEY}`, 'Content-Type': 'application/json' } }
-      ),
-      25000
+      )
     );
 
     const texto =
-      ch?.data?.text?.trim() ||
-      ch?.data?.message?.content?.[0]?.text?.trim() ||
+      cohereResponse?.data?.text?.trim() ||
+      cohereResponse?.data?.message?.content?.[0]?.text?.trim() ||
       '';
 
-    return res.status(200).json({
-      fuente: 'cohere',
-      modelo: process.env.MODEL_COHERE || 'command-r-plus',
-      respuesta: texto
-    });
+    saveTurn(effectiveUserId, mensaje, texto);
+    return res.json({ fuente: 'cohere', modelo: process.env.MODEL_COHERE || 'command-r-plus', respuesta: texto });
   } catch (err) {
-    console.error('Cohere error:', err?.response?.status, err?.message);
+    console.error('❌ Cohere también falló.', err?.message);
     return res.status(500).json({ error: 'Error interno del servidor.' });
   }
-}
+});
+
+// Historial / reset (opcionales)
+app.post('/api/chat/history', (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId requerido' });
+  return res.json({ userId, history: getHistory(userId) });
+});
+app.post('/api/chat/reset', (req, res) => {
+  const { userId } = req.body || {};
+  if (userId) sessions.delete(userId);
+  return res.json({ ok: true });
+});
+
+app.listen(PUERTO, () => {
+  console.log(`✅ Servidor corriendo en puerto ${PUERTO}`);
+});
