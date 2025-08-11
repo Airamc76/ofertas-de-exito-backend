@@ -30,19 +30,32 @@ export default async function handler(req, res) {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
 
+    // ¿Ya existe?
     const exists = await redis.get(keyByEmail(email));
     if (exists) return res.status(409).json({ error: 'El email ya está registrado' });
 
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const userId = uid();
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const userData = { userId, email: email.toLowerCase(), passwordHash, createdAt: Date.now() };
 
-    await redis.set(keyByEmail(email), userId);
-    await redis.set(keyById(userId), JSON.stringify({
-      userId, email: email.toLowerCase(), passwordHash, createdAt: Date.now(),
-    }));
+    // Guardado atómico con verificación
+    const p = redis.pipeline();
+    p.set(keyByEmail(email), userId);
+    p.set(keyById(userId), JSON.stringify(userData));
+    await p.exec();
+
+    // Verificación: ambas claves deben existir
+    const savedId = await redis.get(keyByEmail(email));
+    const raw     = await redis.get(keyById(userId));
+
+    if (!savedId || !raw) {
+      console.error('register verify failed:', { savedId, hasRaw: !!raw });
+      return res.status(500).json({ error: 'No se pudo guardar el usuario (verifica Redis).' });
+    }
 
     const token = signToken({ userId, email: email.toLowerCase() });
     return res.status(201).json({ ok: true, token, user: { userId, email: email.toLowerCase() } });
+
   } catch (e) {
     console.error('register error:', e?.message);
     return res.status(500).json({ error: 'Error en el servidor' });
