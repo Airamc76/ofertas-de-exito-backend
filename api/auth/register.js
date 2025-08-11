@@ -6,18 +6,22 @@ const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me';
+
+const JWT_SECRET  = process.env.JWT_SECRET || 'change-me';
 const SALT_ROUNDS = 10;
 
+// CORS
 function setCORS(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
+
+// Helpers de claves y token
 const keyByEmail = (email) => `alma:user:email:${email.toLowerCase()}`;
 const keyById    = (id)    => `alma:user:${id}`;
-const uid = () => 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-const tokenOf = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+const uid        = () => 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+const tokenOf    = (payload) => jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
 
 export default async function handler(req, res) {
   setCORS(res);
@@ -27,17 +31,27 @@ export default async function handler(req, res) {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
 
+  // ¿ya existe?
   const exists = await redis.get(keyByEmail(email));
   if (exists) return res.status(409).json({ error: 'El email ya está registrado' });
 
+  // crear usuario
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
   const userId = uid();
 
   await redis.set(keyByEmail(email), userId);
   await redis.set(keyById(userId), JSON.stringify({
-    userId, email: email.toLowerCase(), passwordHash, createdAt: Date.now()
+    userId,
+    email: email.toLowerCase(),
+    passwordHash,
+    createdAt: Date.now(),
   }));
 
+  // token
   const token = tokenOf({ userId, email: email.toLowerCase() });
-  return res.status(201).json({ ok: true, token, user: { userId, email: email.toLowerCase() } });
+  return res.status(201).json({
+    ok: true,
+    token,
+    user: { userId, email: email.toLowerCase() }
+  });
 }
