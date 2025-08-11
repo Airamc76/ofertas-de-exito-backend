@@ -1,4 +1,3 @@
-// /api/auth/login.js
 import { Redis } from '@upstash/redis';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -27,39 +26,25 @@ export default async function handler(req, res) {
 
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: 'email y password requeridos' });
-    }
+    if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
 
     const userId = await redis.get(keyByEmail(email));
-    if (!userId) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
+    if (!userId) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const raw = await redis.get(keyById(userId));
     if (!raw) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      // Caso de registro incompleto: email->id existe pero falta id->JSON
+      console.error('login missing user JSON for', userId);
+      return res.status(500).json({ error: 'Perfil incompleto en Redis. Vuelve a registrarte.' });
     }
 
-    let user;
-    try {
-      user = JSON.parse(raw);
-    } catch {
-      return res.status(500).json({ error: 'Error en el servidor (USER_PARSE)' });
-    }
-
-    if (!user?.passwordHash) {
-      // Posible registro viejo sin hash
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
-
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
+    const user = JSON.parse(raw);
+    const ok = await bcrypt.compare(password, user.passwordHash || '');
+    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
     const token = signToken({ userId, email: user.email });
     return res.status(200).json({ ok: true, token, user: { userId, email: user.email } });
+
   } catch (e) {
     console.error('login error:', e?.message);
     return res.status(500).json({ error: 'Error en el servidor' });
