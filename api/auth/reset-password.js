@@ -1,4 +1,3 @@
-// /api/auth/reset.js
 import { Redis } from '@upstash/redis';
 import bcrypt from 'bcryptjs';
 
@@ -12,11 +11,9 @@ function setCORS(res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
-
 const keyByEmail = (email) => `alma:user:email:${email.toLowerCase()}`;
 const keyById    = (id)    => `alma:user:${id}`;
-const resetKey   = (email) => `alma:reset:${email.toLowerCase()}`;
-const SALT_ROUNDS = 10;
+const keyReset   = (email) => `alma:reset:${email.toLowerCase()}`;
 
 export default async function handler(req, res) {
   setCORS(res);
@@ -28,40 +25,44 @@ export default async function handler(req, res) {
     if (!email || !code || !newPassword) {
       return res.status(400).json({ error: 'email, code y newPassword requeridos' });
     }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener 6+ caracteres' });
+    }
 
-    // 1) recupera solicitud
-    const raw = await redis.get(resetKey(email));
-    if (!raw) return res.status(400).json({ error: 'Código inválido o expirado' });
-
-    let payload;
-    try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw; }
-    catch { return res.status(400).json({ error: 'Código inválido o expirado' }); }
-
-    if (payload.code !== String(code)) {
+    // Validar código
+    const saved = await redis.get(keyReset(email));
+    if (!saved || String(saved) !== String(code)) {
       return res.status(400).json({ error: 'Código inválido o expirado' });
     }
 
-    // 2) valida que el email pertenezca al userId esperado
+    // Buscar usuario
     const userId = await redis.get(keyByEmail(email));
-    if (!userId || userId !== payload.userId) {
-      return res.status(400).json({ error: 'Solicitud no válida' });
+    if (!userId) {
+      // Por seguridad, no revelamos
+      await redis.del(keyReset(email));
+      return res.status(200).json({ ok: true });
     }
 
-    // 3) actualiza el hash de la contraseña
-    const userRaw = await redis.get(keyById(userId));
-    if (!userRaw) return res.status(400).json({ error: 'Usuario no encontrado' });
+    // Cargar usuario
+    const raw = await redis.get(keyById(userId));
+    if (!raw) {
+      await redis.del(keyReset(email));
+      return res.status(200).json({ ok: true });
+    }
+    const user = typeof raw === 'string' ? JSON.parse(raw) : raw;
 
-    const user = typeof userRaw === 'string' ? JSON.parse(userRaw) : userRaw;
-    user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    // Hash y guardado
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = passwordHash;
 
     const p = redis.pipeline();
     p.set(keyById(userId), JSON.stringify(user));
-    p.del(resetKey(email));
+    p.del(keyReset(email));
     await p.exec();
 
     return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error('[reset] error:', e?.message);
+    console.error('[reset-password] ERROR:', e?.message);
     return res.status(500).json({ error: 'Error en el servidor' });
   }
 }
