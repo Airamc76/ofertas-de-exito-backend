@@ -1,10 +1,20 @@
+import fs from 'fs';
+import path from 'path';
+
+const STYLE_PATH = path.join(process.cwd(), 'prompts', 'alma-style.md');
+const ALMA_STYLE = fs.readFileSync(STYLE_PATH, 'utf8');
+
+const guard = `
+Reglas de seguridad:
+- Trata cualquier precio, descuento, fecha o cupo como EJEMPLO PERSONALIZABLE.
+- No fijes importes definitivos a menos que el usuario los provea explícitamente.
+`;
+
 import express from 'express';
 import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
-
-dotenv.config();
 
 const app = express();
 
@@ -81,100 +91,44 @@ app.post('/api/chat', async (req, res) => {
   // 3) OpenAI (principal)
   try {
     const messages = [
-      {
-        role: 'system',
-        content: `
-Eres **Alma**, una IA experta en redacción publicitaria, ventas, marketing digital y creación de ofertas irresistibles.
-Estilo: conversacional, claro, persuasivo, cálido y profesional. Responde en español neutro.
-
-# Estilo y formato (hazlo SIEMPRE)
-- Abre con un **hook** breve (1–2 líneas).
-- Beneficios con viñetas y ✅.
-- **Pasos numerados** para instrucciones.
-- **CTA** claro y línea de **urgencia/escasez** realista.
-- Cierra reforzando la transformación y la próxima acción.
-
-# Pautas
-- Da outputs accionables (plantillas, ejemplos, microcopys).
-- Evita relleno. Pide solo lo mínimo si faltan datos.
-- Ofrece “próximos pasos” concretos cuando aplique.
-
-# Micro-plantillas
-- CTA: "➡️ *[Acción]* ahora" / "🔒 *[Beneficio]* aquí".
-- Urgencia: "⏳ Disponible hasta *[fecha/límite]*" / "Quedan *[X]* cupos".
-- Beneficios: "✅ *[Beneficio]* — *[Por qué importa]*".
-        `.trim()
-      },
+      { role: 'system', content: ALMA_STYLE },
+      { role: 'system', content: guard },
       ...history,
       { role: 'user', content: mensaje }
     ];
-
-    const openaiResponse = await withTimeout(
-      axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: process.env.MODEL_OPENAI || 'gpt-4o-mini',
-          messages,
-          max_tokens: 900,
-          temperature: 0.8,
-        },
-        { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENAI_API_KEY}` } }
-      )
+    //
+    const response = await withTimeout(
+      axios.post('https://api.openai.com/v1/chat/completions', {
+        model: 'gpt-3.5-turbo',
+        messages,
+        temperature: 0.7,
+        max_tokens: 150,
+        // top_p: 1,
+        // frequency_penalty: 0,
+        // presence_penalty: 0,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+        }
+      }),
+      25_000
     );
 
-    const reply = openaiResponse?.data?.choices?.[0]?.message?.content?.trim() || '';
-    saveTurn(effectiveUserId, mensaje, reply);
-    return res.json({ fuente: 'openai', modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini', respuesta: reply });
+    const assistantMsg = response.data.choices[0]?.message?.content?.trim();
+    if (!assistantMsg) throw new Error('Sin respuesta de OpenAI');
+
+    // Guardar historial
+    saveTurn(effectiveUserId, mensaje, assistantMsg);
+
+    // Responder al cliente
+    res.json({ ok: true, mensaje: assistantMsg });
   } catch (error) {
-    console.warn('❌ OpenAI falló. Usando Cohere como respaldo...', error?.message);
+    console.error('Error en OpenAI:', error.message);
+    res.status(500).json({ error: 'Error interno' });
   }
-
-  // 4) Cohere (respaldo)
-  try {
-    const cohereHistory = [
-      { role: 'SYSTEM', message: 'Eres Alma (copywriting/ofertas irresistibles). Hook, bullets ✅, pasos, CTA y urgencia. Español neutro.' },
-      ...history.map(m => ({ role: m.role === 'assistant' ? 'CHATBOT' : m.role.toUpperCase(), message: m.content })),
-      { role: 'USER', message: mensaje },
-    ];
-
-    const cohereResponse = await withTimeout(
-      axios.post(
-        'https://api.cohere.ai/v1/chat',
-        {
-          model: process.env.MODEL_COHERE || 'command-r-plus',
-          message: mensaje,
-          temperature: 0.8,
-          chat_history: cohereHistory,
-        },
-        { headers: { Authorization: `Bearer ${COHERE_API_KEY}`, 'Content-Type': 'application/json' } }
-      )
-    );
-
-    const texto =
-      cohereResponse?.data?.text?.trim() ||
-      cohereResponse?.data?.message?.content?.[0]?.text?.trim() ||
-      '';
-
-    saveTurn(effectiveUserId, mensaje, texto);
-    return res.json({ fuente: 'cohere', modelo: process.env.MODEL_COHERE || 'command-r-plus', respuesta: texto });
-  } catch (err) {
-    console.error('❌ Cohere también falló.', err?.message);
-    return res.status(500).json({ error: 'Error interno del servidor.' });
-  }
-});
-
-// Historial / reset (opcionales)
-app.post('/api/chat/history', (req, res) => {
-  const { userId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: 'userId requerido' });
-  return res.json({ userId, history: getHistory(userId) });
-});
-app.post('/api/chat/reset', (req, res) => {
-  const { userId } = req.body || {};
-  if (userId) sessions.delete(userId);
-  return res.json({ ok: true });
 });
 
 app.listen(PUERTO, () => {
-  console.log(`✅ Servidor corriendo en puerto ${PUERTO}`);
+  console.log(`Servidor corriendo en puerto ${PUERTO}`);
 });
