@@ -1,62 +1,67 @@
-// api/auth/reset-password.js
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
+// /api/auth/reset.js
+import { Redis } from '@upstash/redis';
 import bcrypt from 'bcryptjs';
-// import { getUserByEmail, updateUserPasswordHash } from './_users.js';
 
-dotenv.config();
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me';
-
-// ⬇️ Implementa estas funciones según tu almacenamiento real
-async function getUserByEmailFake(email) {
-  // Reemplaza por tu lookup real (KV/DB)
-  return null;
+function setCORS(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
-async function updateUserPasswordHashFake(userIdOrEmail, passwordHash) {
-  // Guarda el hash en tu storage real.
-  return true;
-}
+
+const keyByEmail = (email) => `alma:user:email:${email.toLowerCase()}`;
+const keyById    = (id)    => `alma:user:${id}`;
+const resetKey   = (email) => `alma:reset:${email.toLowerCase()}`;
+const SALT_ROUNDS = 10;
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  setCORS(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'POST')    return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
-    const { token, newPassword } = req.body || {};
-    if (!token || typeof token !== 'string') {
-      return res.status(400).json({ error: 'Token requerido' });
+    const { email, code, newPassword } = req.body || {};
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: 'email, code y newPassword requeridos' });
     }
-    if (!newPassword || String(newPassword).length < 6) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
-    }
+
+    // 1) recupera solicitud
+    const raw = await redis.get(resetKey(email));
+    if (!raw) return res.status(400).json({ error: 'Código inválido o expirado' });
 
     let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET);
-    } catch {
-      return res.status(400).json({ error: 'Token inválido o expirado' });
-    }
-    if (payload?.purpose !== 'reset') {
-      return res.status(400).json({ error: 'Token inválido' });
+    try { payload = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+    catch { return res.status(400).json({ error: 'Código inválido o expirado' }); }
+
+    if (payload.code !== String(code)) {
+      return res.status(400).json({ error: 'Código inválido o expirado' });
     }
 
-    const email = payload.email;
-    if (!email) return res.status(400).json({ error: 'Token sin email' });
+    // 2) valida que el email pertenezca al userId esperado
+    const userId = await redis.get(keyByEmail(email));
+    if (!userId || userId !== payload.userId) {
+      return res.status(400).json({ error: 'Solicitud no válida' });
+    }
 
-    // 1) Buscar usuario (no revelamos si existe)
-    // const user = await getUserByEmail(email);
-    const user = await getUserByEmailFake(email);
+    // 3) actualiza el hash de la contraseña
+    const userRaw = await redis.get(keyById(userId));
+    if (!userRaw) return res.status(400).json({ error: 'Usuario no encontrado' });
 
-    // 2) Hashear nueva clave
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const user = typeof userRaw === 'string' ? JSON.parse(userRaw) : userRaw;
+    user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
 
-    // 3) Guardar (si existe); para no revelar nada, siempre respondemos 200
-    // const ok = user ? await updateUserPasswordHash(user.userId, passwordHash) : true;
-    const ok = user ? await updateUserPasswordHashFake(user.userId || email, passwordHash) : true;
+    const p = redis.pipeline();
+    p.set(keyById(userId), JSON.stringify(user));
+    p.del(resetKey(email));
+    await p.exec();
 
-    return res.json({ ok: !!ok });
+    return res.status(200).json({ ok: true });
   } catch (e) {
-    console.error('reset-password error:', e);
-    return res.status(500).json({ error: 'Error interno' });
+    console.error('[reset] error:', e?.message);
+    return res.status(500).json({ error: 'Error en el servidor' });
   }
 }
