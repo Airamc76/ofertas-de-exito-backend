@@ -19,11 +19,10 @@ let ALMA_STYLE = '';
 try {
   ALMA_STYLE = fs.readFileSync(STYLE_PATH, 'utf8');
 } catch (e) {
-  console.warn('[chat] No se pudo leer prompts/alma-style.md. ¿Existe el archivo?', e?.message);
+  console.warn('[chat] No se pudo leer alma-style.md. Usando fallback.', e?.message);
   ALMA_STYLE = `
-Eres “Alma”, asistente de copywriting y ofertas irresistibles. Responde en español con bloques claros,
-acción inmediata y tono directo/empático. Trata todos los precios, descuentos, fechas y cupos como EJEMPLOS.
-`;
+Eres “Alma”, **experta en ventas online** y ofertas irresistibles. Tu trabajo: guiar a la persona para convertir ideas en ventas digitales usando funnels, páginas de venta, anuncios, e-mail marketing y automatización. Responde en español con bloques claros, acción inmediata y tono directo/empático.
+  `;
 }
 
 const GUARD = `
@@ -45,9 +44,8 @@ if (!OPENAI_API_KEY) {
   console.warn('[chat] Falta OPENAI_API_KEY en variables de entorno');
 }
 
-// CORS: incluye Authorization y maneja preflight
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // o tu dominio si quieres restringir
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -57,10 +55,10 @@ app.use(cors());
 app.use(express.json());
 
 /* ==========================
-   2) Sesiones (memoria RAM)
+   2) Sesiones en RAM
    ========================== */
-const sessions = new Map();      // userId -> [{ role:'user'|'assistant', content }]
-const MAX_TURNS = 12;            // conserva aprox. los últimos 12 turnos
+const sessions = new Map();      
+const MAX_TURNS = 12;            
 
 function getHistory(userId) {
   if (!userId) return [];
@@ -72,7 +70,6 @@ function saveTurn(userId, userMsg, assistantMsg) {
   if (userMsg)      hist.push({ role: 'user',      content: userMsg });
   if (assistantMsg) hist.push({ role: 'assistant', content: assistantMsg });
 
-  // recorta si excede
   const extra = Math.max(0, hist.length - MAX_TURNS * 2);
   if (extra) hist.splice(0, extra);
 
@@ -88,7 +85,7 @@ const withTimeout = (promise, ms = 25_000) =>
     new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))
   ]);
 
-const sanitize = (s = '') => String(s).trim().slice(0, 2000); // limita input
+const sanitize = (s = '') => String(s).trim().slice(0, 2000); 
 
 /* ==========================
    4) Health
@@ -110,20 +107,16 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Mensaje requerido' });
     }
 
-    // Token (opcional)
     let tokenUserId = null;
     const auth = req.headers.authorization || '';
     if (auth.startsWith('Bearer ')) {
       const token = auth.slice(7);
       try {
-        const payload = jwt.verify(token, JWT_SECRET); // { userId, email }
+        const payload = jwt.verify(token, JWT_SECRET);
         tokenUserId = payload?.userId || null;
-      } catch (_) {
-        // token inválido: seguimos como anónimo
-      }
+      } catch (_) {}
     }
 
-    // userId efectivo
     const userId = tokenUserId || bodyUser;
     if (!userId) {
       return res.status(400).json({ error: 'userId requerido (o token válido)' });
@@ -131,7 +124,7 @@ app.post('/api/chat', async (req, res) => {
 
     const history = getHistory(userId);
 
-    // Mensajes al modelo
+    // Bloques de contexto para Alma
     const systemBlock = `${ALMA_STYLE}\n\n${GUARD}\n\nContexto: Responde en español.`;
     const messages = [
       { role: 'system', content: systemBlock },
@@ -139,12 +132,10 @@ app.post('/api/chat', async (req, res) => {
       { role: 'user', content: mensaje }
     ];
 
-    // Llamada a OpenAI
     const openaiResp = await withTimeout(
       axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
-          // usa el modelo que prefieras; gpt-4o-mini suele dar muy buena calidad/costo
           model: process.env.MODEL_OPENAI || 'gpt-4o-mini',
           messages,
           temperature: 0.7,
@@ -168,7 +159,6 @@ app.post('/api/chat', async (req, res) => {
       return res.status(502).json({ error: 'Respuesta inválida.' });
     }
 
-    // guarda en historial
     saveTurn(userId, mensaje, assistantMsg);
 
     res.json({
@@ -189,3 +179,4 @@ app.post('/api/chat', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[chat] Servidor corriendo en puerto ${PORT}`);
 });
+
