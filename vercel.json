@@ -1,21 +1,22 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/chat.js",
-      "use": "@vercel/node"
+  "functions": {
+    "api/chat.js": {
+      "runtime": "@vercel/node@18.x"
     }
-  ],
+  },
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "/api/chat/ping",
+      "dest": "/api/chat.js"
+    },
+    {
+      "src": "/api/chat/conversations",
+      "dest": "/api/chat.js"
+    },
+    {
+      "src": "/api/chat",
       "dest": "/api/chat.js"
     }
-  ],
-  "env": {
-    "UPSTASH_REDIS_REST_URL": "@upstash_redis_rest_url",
-    "UPSTASH_REDIS_REST_TOKEN": "@upstash_redis_rest_token",
-    "OPENAI_API_KEY": "@openai_api_key",
-    "JWT_SECRET": "@jwt_secret"
-  }
+  ]
 }
