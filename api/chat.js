@@ -55,25 +55,79 @@ app.use(cors());
 app.use(express.json());
 
 /* ==========================
-   2) Sesiones en RAM
+   2) Historial con Redis
    ========================== */
-const sessions = new Map();      
-const MAX_TURNS = 12;            
+import { Redis } from '@upstash/redis';
 
-function getHistory(userId) {
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+const MAX_TURNS = 100; // Suficiente para ~3 meses de uso regular
+
+async function getHistory(userId, conversationId = 'default') {
   if (!userId) return [];
-  return sessions.get(userId) || [];
+  try {
+    const key = `chat:${userId}:${conversationId}`;
+    const history = await redis.get(key);
+    return history || [];
+  } catch (error) {
+    console.error('[chat] Error getting history:', error);
+    return [];
+  }
 }
-function saveTurn(userId, userMsg, assistantMsg) {
+
+async function saveTurn(userId, userMsg, assistantMsg, conversationId = 'default') {
   if (!userId) return;
-  const hist = sessions.get(userId) || [];
-  if (userMsg)      hist.push({ role: 'user',      content: userMsg });
-  if (assistantMsg) hist.push({ role: 'assistant', content: assistantMsg });
+  try {
+    const hist = await getHistory(userId, conversationId);
+    if (userMsg) hist.push({ role: 'user', content: userMsg, timestamp: new Date().toISOString() });
+    if (assistantMsg) hist.push({ role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString() });
 
-  const extra = Math.max(0, hist.length - MAX_TURNS * 2);
-  if (extra) hist.splice(0, extra);
+    const extra = Math.max(0, hist.length - MAX_TURNS * 2);
+    if (extra) hist.splice(0, extra);
 
-  sessions.set(userId, hist);
+    const key = `chat:${userId}:${conversationId}`;
+    await redis.set(key, hist);
+    
+    // Guardar lista de conversaciones del usuario
+    await saveConversationList(userId, conversationId, userMsg);
+  } catch (error) {
+    console.error('[chat] Error saving turn:', error);
+  }
+}
+
+async function saveConversationList(userId, conversationId, firstMessage) {
+  try {
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    // Verificar si ya existe
+    const existing = conversations.find(c => c.id === conversationId);
+    if (!existing) {
+      const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : '');
+      conversations.unshift({
+        id: conversationId,
+        title,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Limitar a 20 conversaciones máximo
+      if (conversations.length > 20) {
+        conversations.splice(20);
+      }
+      
+      await redis.set(listKey, conversations);
+    } else {
+      // Actualizar timestamp
+      existing.updatedAt = new Date().toISOString();
+      await redis.set(listKey, conversations);
+    }
+  } catch (error) {
+    console.error('[chat] Error saving conversation list:', error);
+  }
 }
 
 /* ==========================
@@ -101,6 +155,7 @@ app.post('/api/chat', async (req, res) => {
   try {
     const rawMsg   = req.body?.mensaje;
     const bodyUser = req.body?.userId;
+    const conversationId = req.body?.conversationId || `conv_${Date.now()}`;
     const mensaje  = sanitize(rawMsg);
 
     if (!mensaje) {
@@ -122,7 +177,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'userId requerido (o token válido)' });
     }
 
-    const history = getHistory(userId);
+    const history = await getHistory(userId, conversationId);
 
     // Bloques de contexto para Alma
     const systemBlock = `${ALMA_STYLE}\n\n${GUARD}\n\nContexto: Responde en español.`;
@@ -159,13 +214,14 @@ app.post('/api/chat', async (req, res) => {
       return res.status(502).json({ error: 'Respuesta inválida.' });
     }
 
-    saveTurn(userId, mensaje, assistantMsg);
+    await saveTurn(userId, mensaje, assistantMsg, conversationId);
 
     res.json({
       ok: true,
       fuente: 'openai',
       modelo: process.env.MODEL_OPENAI || 'gpt-4o-mini',
-      respuesta: assistantMsg
+      respuesta: assistantMsg,
+      conversationId: conversationId
     });
   } catch (err) {
     console.error('[chat] Error:', err?.message);
@@ -174,7 +230,39 @@ app.post('/api/chat', async (req, res) => {
 });
 
 /* ==========================
-   6) Listen
+   6) Endpoint para listar conversaciones
+   ========================== */
+app.get('/api/chat/conversations', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    res.json({
+      ok: true,
+      conversations: conversations
+    });
+  } catch (error) {
+    console.error('[chat] Error getting conversations:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+/* ==========================
+   7) Listen
    ========================== */
 app.listen(PORT, () => {
   console.log(`[chat] Servidor corriendo en puerto ${PORT}`);
