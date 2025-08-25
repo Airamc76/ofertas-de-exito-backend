@@ -262,6 +262,220 @@ app.get('/api/chat/conversations', async (req, res) => {
 });
 
 /* ==========================
+   7) Endpoints de Autenticación
+   ========================== */
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    }
+
+    // Buscar usuario por email
+    const emailKey = `alma:user:email:${email.toLowerCase()}`;
+    const userId = await redis.get(emailKey);
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // Cargar datos del usuario
+    const userKey = `alma:user:${userId}`;
+    const userData = await redis.get(userKey);
+    
+    if (!userData) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    const user = typeof userData === 'string' ? JSON.parse(userData) : userData;
+
+    // Verificar contraseña (usando bcrypt si está hasheada, sino comparación directa)
+    let passwordValid = false;
+    if (user.passwordHash) {
+      const bcrypt = await import('bcryptjs');
+      passwordValid = await bcrypt.compare(password, user.passwordHash);
+    } else {
+      passwordValid = password === user.password;
+    }
+
+    if (!passwordValid) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
+    }
+
+    // Generar token JWT
+    const token = jwt.sign(
+      { userId, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      ok: true,
+      token,
+      user: { userId, email: user.email }
+    });
+  } catch (error) {
+    console.error('[auth] Login error:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// Registro
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const emailKey = `alma:user:email:${email.toLowerCase()}`;
+    
+    // Verificar si el usuario ya existe
+    const existingUserId = await redis.get(emailKey);
+    if (existingUserId) {
+      return res.status(400).json({ error: 'El usuario ya existe' });
+    }
+
+    // Generar ID único para el usuario
+    const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Hash de la contraseña
+    const bcrypt = await import('bcryptjs');
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Datos del usuario
+    const userData = {
+      userId,
+      email: email.toLowerCase(),
+      passwordHash,
+      createdAt: new Date().toISOString()
+    };
+
+    // Guardar usuario
+    const userKey = `alma:user:${userId}`;
+    await redis.set(userKey, JSON.stringify(userData));
+    await redis.set(emailKey, userId);
+
+    // Generar token JWT
+    const token = jwt.sign(
+      { userId, email: userData.email },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      ok: true,
+      token,
+      user: { userId, email: userData.email }
+    });
+  } catch (error) {
+    console.error('[auth] Register error:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// Solicitar reset de contraseña
+app.post('/api/auth/request-reset', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email requerido' });
+    }
+
+    const emailKey = `alma:user:email:${email.toLowerCase()}`;
+    const userId = await redis.get(emailKey);
+    
+    if (!userId) {
+      // Por seguridad, no revelamos si el email existe o no
+      return res.json({ 
+        ok: true, 
+        message: 'Si el email existe, recibirás instrucciones para resetear tu contraseña' 
+      });
+    }
+
+    // Generar token de reset
+    const resetToken = Math.random().toString(36).substr(2, 32);
+    const resetKey = `alma:reset:${resetToken}`;
+    
+    // Guardar token con expiración de 1 hora
+    await redis.set(resetKey, userId, { ex: 3600 });
+
+    // En un entorno real, aquí enviarías un email
+    // Por ahora solo devolvemos el token para testing
+    res.json({
+      ok: true,
+      message: 'Si el email existe, recibirás instrucciones para resetear tu contraseña',
+      resetToken: resetToken // Solo para testing, remover en producción
+    });
+  } catch (error) {
+    console.error('[auth] Request reset error:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// Reset de contraseña
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { resetToken, newPassword } = req.body || {};
+    
+    if (!resetToken || !newPassword) {
+      return res.status(400).json({ error: 'Token y nueva contraseña requeridos' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const resetKey = `alma:reset:${resetToken}`;
+    const userId = await redis.get(resetKey);
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Token inválido o expirado' });
+    }
+
+    // Cargar datos del usuario
+    const userKey = `alma:user:${userId}`;
+    const userData = await redis.get(userKey);
+    
+    if (!userData) {
+      return res.status(400).json({ error: 'Usuario no encontrado' });
+    }
+
+    const user = typeof userData === 'string' ? JSON.parse(userData) : userData;
+
+    // Hash de la nueva contraseña
+    const bcrypt = await import('bcryptjs');
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Actualizar contraseña
+    user.passwordHash = passwordHash;
+    user.updatedAt = new Date().toISOString();
+
+    await redis.set(userKey, JSON.stringify(user));
+    
+    // Eliminar token de reset
+    await redis.del(resetKey);
+
+    res.json({
+      ok: true,
+      message: 'Contraseña actualizada exitosamente'
+    });
+  } catch (error) {
+    console.error('[auth] Reset password error:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+/* ==========================
    7) Listen
    ========================== */
 app.listen(PORT, () => {
