@@ -7,7 +7,7 @@ node_modules/
 .env.production
 
 # Test files (optional - remove if you want to keep them)
-test-*.js
+# test-*.js
 
 # Logs
 *.log

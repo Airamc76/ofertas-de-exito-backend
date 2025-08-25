@@ -4,8 +4,10 @@ import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
-import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import { Redis } from '@upstash/redis';
+import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -295,7 +297,6 @@ app.post('/api/auth/login', async (req, res) => {
     // Verificar contraseña (usando bcrypt si está hasheada, sino comparación directa)
     let passwordValid = false;
     if (user.passwordHash) {
-      const bcrypt = require('bcryptjs');
       passwordValid = await bcrypt.compare(password, user.passwordHash);
     } else {
       passwordValid = password === user.password;
@@ -348,7 +349,6 @@ app.post('/api/auth/register', async (req, res) => {
     const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
     // Hash de la contraseña
-    const bcrypt = require('bcryptjs');
     const passwordHash = await bcrypt.hash(password, 10);
 
     // Datos del usuario
@@ -453,7 +453,6 @@ app.post('/api/auth/reset-password', async (req, res) => {
     const user = typeof userData === 'string' ? JSON.parse(userData) : userData;
 
     // Hash de la nueva contraseña
-    const bcrypt = require('bcryptjs');
     const passwordHash = await bcrypt.hash(newPassword, 10);
 
     // Actualizar contraseña
