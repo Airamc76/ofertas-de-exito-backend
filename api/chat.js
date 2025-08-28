@@ -77,12 +77,43 @@ const redis = new Redis({
 
 const MAX_TURNS = 100; // Suficiente para ~3 meses de uso regular
 
+// Helpers para deserializar y normalizar historial legado
+function tryParseJSON(val) {
+  if (typeof val !== 'string') return null;
+  try { return JSON.parse(val); } catch { return null; }
+}
+
+function normalizeHistory(raw) {
+  // Upstash puede devolver strings (JSON) si se guardó así en el pasado
+  const val = typeof raw === 'string' ? (tryParseJSON(raw) ?? raw) : raw;
+  if (!Array.isArray(val)) return [];
+  // Aceptar solo elementos con role y content válidos
+  return val
+    .filter(m => m && typeof m === 'object' && typeof m.role === 'string' && typeof m.content === 'string')
+    .map(m => ({ role: m.role, content: String(m.content) }));
+}
+
+function isValidRole(role) {
+  return role === 'system' || role === 'user' || role === 'assistant';
+}
+
+function isValidMessage(m) {
+  return m && typeof m === 'object' && isValidRole(m.role) && typeof m.content === 'string';
+}
+
+function normalizeMessagesArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(isValidMessage)
+    .map(m => ({ role: m.role, content: String(m.content) }));
+}
+
 async function getHistory(userId, conversationId = 'default') {
   if (!userId) return [];
   try {
     const key = `chat:${userId}:${conversationId}`;
     const history = await redis.get(key);
-    return history || [];
+    return normalizeHistory(history);
   } catch (error) {
     console.error('[chat] Error getting history:', error);
     return [];
@@ -230,11 +261,20 @@ app.post('/api/chat', async (req, res) => {
 
     // Bloques de contexto para Alma
     const systemBlock = `${ALMA_STYLE}\n\n${GUARD}\n\nContexto: Responde en español.`;
-    const messages = [
+    let messages = [
       { role: 'system', content: systemBlock },
       ...history.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: mensaje }
     ];
+
+    // Validación extra: si algún mensaje es inválido, usamos solo system + user
+    if (!messages.every(isValidMessage)) {
+      console.warn('[chat] Mensajes inválidos detectados. Rehaciendo sin historial.', { conversationId, userId });
+      messages = [
+        { role: 'system', content: systemBlock },
+        { role: 'user', content: mensaje }
+      ];
+    }
 
     const openaiResp = await withTimeout(
       axios.post(
@@ -376,10 +416,11 @@ app.post('/api/conversations', async (req, res) => {
 
     await redis.set(listKey, conversations);
 
-    // Si se proporcionan mensajes, guardar el historial
+    // Si se proporcionan mensajes, normalizarlos antes de guardar
     if (messages && Array.isArray(messages)) {
+      const normalized = normalizeMessagesArray(messages);
       const chatKey = `chat:${userId}:${id}`;
-      await redis.set(chatKey, messages);
+      await redis.set(chatKey, normalized);
     }
 
     res.json({
@@ -429,10 +470,11 @@ app.put('/api/conversations/:id', async (req, res) => {
 
     await redis.set(listKey, conversations);
 
-    // Actualizar mensajes si se proporcionan
+    // Actualizar mensajes si se proporcionan (normalizados)
     if (messages && Array.isArray(messages)) {
+      const normalized = normalizeMessagesArray(messages);
       const chatKey = `chat:${userId}:${conversationId}`;
-      await redis.set(chatKey, messages);
+      await redis.set(chatKey, normalized);
     }
 
     res.json({
