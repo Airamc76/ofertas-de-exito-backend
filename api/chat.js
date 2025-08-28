@@ -55,6 +55,16 @@ app.use((req, res, next) => {
 });
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.text({ type: 'text/*' }));
+
+// Manejador de errores de parseo JSON para responder en JSON y no HTML
+app.use((err, _req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'JSON inválido en el cuerpo de la solicitud' });
+  }
+  next(err);
+});
 
 /* ==========================
    2) Historial con Redis
@@ -149,18 +159,56 @@ app.get('/api/chat/ping', (_req, res) => {
   res.json({ ok: true, route: '/api/chat/ping', method: 'GET' });
 });
 
+// Endpoint de depuración para inspeccionar lo que recibe el servidor
+app.post('/api/chat/debug', (req, res) => {
+  try {
+    const ct = req.headers['content-type'] || '';
+    const preview = (obj) => {
+      try { return JSON.parse(JSON.stringify(obj)); } catch { return String(obj); }
+    };
+    res.json({
+      ok: true,
+      contentType: ct,
+      bodyType: typeof req.body,
+      body: preview(req.body),
+      query: preview(req.query),
+      headers: {
+        'x-user-id': req.headers['x-user-id'] || null,
+        'x-message': req.headers['x-message'] || null
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || 'debug failed' });
+  }
+});
+
 /* ==========================
    5) Endpoint principal
    ========================== */
 app.post('/api/chat', async (req, res) => {
   try {
-    const rawMsg   = req.body?.mensaje;
-    const bodyUser = req.body?.userId;
+    let rawMsg   = req.body?.mensaje ?? req.body?.message ?? req.query?.mensaje ?? req.query?.message ?? req.headers['x-message'];
+    let bodyUser = req.body?.userId ?? req.query?.userId ?? req.headers['x-user-id'];
+    // Fallbacks por si el body llega como string o por querystring
+    if (!rawMsg && typeof req.body === 'string') {
+      try {
+        const parsed = JSON.parse(req.body);
+        rawMsg = parsed?.mensaje ?? parsed?.message;
+        bodyUser = bodyUser || parsed?.userId;
+      } catch (_) {}
+      // Si no es JSON, tratar la cadena completa como mensaje
+      if (!rawMsg) rawMsg = req.body;
+    }
     const conversationId = req.body?.conversationId || `conv_${Date.now()}`;
     const mensaje  = sanitize(rawMsg);
 
     if (!mensaje) {
       return res.status(400).json({ error: 'Mensaje requerido' });
+    }
+
+    // Validación temprana: si falta la API key, no intentamos llamar a OpenAI
+    if (!OPENAI_API_KEY) {
+      return res.status(503).json({ error: 'OPENAI_API_KEY no configurada en el servidor' });
     }
 
     let tokenUserId = null;
@@ -225,8 +273,22 @@ app.post('/api/chat', async (req, res) => {
       conversationId: conversationId
     });
   } catch (err) {
-    console.error('[chat] Error:', err?.message);
-    res.status(500).json({ error: 'Error en el servidor' });
+    const status = err?.response?.status || 500;
+    const data = err?.response?.data;
+    const msg = (data && (data.error?.message || data.message)) || err?.message || 'Error en el servidor';
+    try {
+      console.error('[chat] Error OpenAI/chat:', {
+        status,
+        message: msg,
+        data: typeof data === 'object' ? data : String(data || '')
+      });
+    } catch (_) {
+      console.error('[chat] Error OpenAI/chat:', status, msg);
+    }
+    return res.status(status).json({
+      error: msg,
+      providerStatus: status
+    });
   }
 });
 
@@ -668,10 +730,22 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-/* ==========================
-   7) Listen
-   ========================== */
-app.listen(PORT, () => {
-  console.log(`[chat] Servidor corriendo en puerto ${PORT}`);
+// Manejador de errores final: siempre devolver JSON
+// Debe estar al final de todas las rutas y middlewares (antes de exportar)
+app.use((err, _req, res, _next) => {
+  const status = err?.status || 400;
+  const msg = err?.message || 'Solicitud inválida';
+  res.status(status).json({ error: msg });
 });
 
+/* ==========================
+   7) Export / Listen
+   ========================== */
+// En Vercel (serverless) exportamos el app; en local levantamos el servidor
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[chat] Servidor corriendo en puerto ${PORT}`);
+  });
+}
+
+export default app;
