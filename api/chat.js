@@ -231,8 +231,203 @@ app.post('/api/chat', async (req, res) => {
 });
 
 /* ==========================
-   6) Endpoint para listar conversaciones
+   6) Endpoints de Gestión de Conversaciones
    ========================== */
+
+// GET /api/conversations - Listar conversaciones del usuario
+app.get('/api/conversations', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    res.json({
+      ok: true,
+      conversations: conversations
+    });
+  } catch (error) {
+    console.error('[conversations] Error getting conversations:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// POST /api/conversations - Crear/actualizar conversación
+app.post('/api/conversations', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const { id, title, messages } = req.body;
+    
+    if (!id || !title) {
+      return res.status(400).json({ error: 'ID y título requeridos' });
+    }
+
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    // Buscar conversación existente
+    const existingIndex = conversations.findIndex(c => c.id === id);
+    const conversationData = {
+      id,
+      title,
+      updatedAt: new Date().toISOString(),
+      createdAt: existingIndex >= 0 ? conversations[existingIndex].createdAt : new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      // Actualizar existente
+      conversations[existingIndex] = conversationData;
+    } else {
+      // Crear nueva
+      conversations.unshift(conversationData);
+      
+      // Limitar a 20 conversaciones máximo
+      if (conversations.length > 20) {
+        conversations.splice(20);
+      }
+    }
+
+    await redis.set(listKey, conversations);
+
+    // Si se proporcionan mensajes, guardar el historial
+    if (messages && Array.isArray(messages)) {
+      const chatKey = `chat:${userId}:${id}`;
+      await redis.set(chatKey, messages);
+    }
+
+    res.json({
+      ok: true,
+      conversation: conversationData
+    });
+  } catch (error) {
+    console.error('[conversations] Error creating/updating conversation:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// PUT /api/conversations/:id - Actualizar conversación específica
+app.put('/api/conversations/:id', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const conversationId = req.params.id;
+    const { title, messages } = req.body;
+
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    const existingIndex = conversations.findIndex(c => c.id === conversationId);
+    
+    if (existingIndex < 0) {
+      return res.status(404).json({ error: 'Conversación no encontrada' });
+    }
+
+    // Actualizar metadatos
+    if (title) {
+      conversations[existingIndex].title = title;
+    }
+    conversations[existingIndex].updatedAt = new Date().toISOString();
+
+    await redis.set(listKey, conversations);
+
+    // Actualizar mensajes si se proporcionan
+    if (messages && Array.isArray(messages)) {
+      const chatKey = `chat:${userId}:${conversationId}`;
+      await redis.set(chatKey, messages);
+    }
+
+    res.json({
+      ok: true,
+      conversation: conversations[existingIndex]
+    });
+  } catch (error) {
+    console.error('[conversations] Error updating conversation:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// DELETE /api/conversations/:id - Eliminar conversación
+app.delete('/api/conversations/:id', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const conversationId = req.params.id;
+
+    const listKey = `conversations:${userId}`;
+    const conversations = await redis.get(listKey) || [];
+    
+    const filteredConversations = conversations.filter(c => c.id !== conversationId);
+    
+    if (filteredConversations.length === conversations.length) {
+      return res.status(404).json({ error: 'Conversación no encontrada' });
+    }
+
+    await redis.set(listKey, filteredConversations);
+
+    // Eliminar también el historial de mensajes
+    const chatKey = `chat:${userId}:${conversationId}`;
+    await redis.del(chatKey);
+
+    res.json({
+      ok: true,
+      message: 'Conversación eliminada'
+    });
+  } catch (error) {
+    console.error('[conversations] Error deleting conversation:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
+// Mantener compatibilidad con el endpoint anterior
 app.get('/api/chat/conversations', async (req, res) => {
   try {
     let userId = null;
