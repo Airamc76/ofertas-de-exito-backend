@@ -328,6 +328,14 @@ app.post('/api/chat', async (req, res) => {
 
     await saveTurn(userId, mensaje, assistantMsg, conversationId);
 
+    console.log('[chat] Conversation saved:', {
+      userId,
+      conversationId,
+      messageLength: mensaje.length,
+      responseLength: assistantMsg.length,
+      redisKey: `chat:${userId}:${conversationId}`
+    });
+
     res.json({
       ok: true,
       fuente: 'openai',
