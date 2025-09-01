@@ -730,11 +730,50 @@ app.post('/api/auth/request-reset', async (req, res) => {
     // Guardar código con expiración de 15 minutos
     await redis.set(resetKey, code, { ex: 15 * 60 });
 
+    // Enviar email con Resend (solo si el usuario existe)
+    if (userId && process.env.RESEND_API_KEY) {
+      try {
+        const { Resend } = await import('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        
+        const emailData = {
+          from: process.env.EMAIL_FROM || 'Alma <onboarding@resend.dev>',
+          to: email,
+          subject: 'Tu código para restablecer la contraseña - Alma',
+          html: `
+            <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:560px;margin:auto;padding:20px">
+              <div style="text-align:center;margin-bottom:30px">
+                <h1 style="color:#3b82f6;margin:0">Alma</h1>
+                <p style="color:#6b7280;margin:5px 0">Ambición, Liderazgo, Motivo y Acción para tu futuro</p>
+              </div>
+              
+              <h2 style="color:#111827;margin-bottom:20px">Código de verificación</h2>
+              <p style="color:#374151;margin-bottom:20px">Usa este código para restablecer tu contraseña:</p>
+              
+              <div style="background:#f3f4f6;border-radius:8px;padding:20px;text-align:center;margin:20px 0">
+                <div style="font-size:32px;font-weight:700;letter-spacing:8px;color:#1f2937">${code}</div>
+              </div>
+              
+              <p style="color:#6b7280;font-size:14px;margin-top:20px">
+                Este código caduca en 15 minutos. Si no solicitaste este cambio, ignora este mensaje.
+              </p>
+            </div>
+          `
+        };
+
+        await resend.emails.send(emailData);
+        console.log(`[auth] Email enviado a ${email} con código ${code}`);
+      } catch (emailError) {
+        console.error('[auth] Error enviando email:', emailError?.message);
+        // No fallar la request si el email falla
+      }
+    }
+
     // Por seguridad, siempre respondemos ok
     res.json({
       ok: true,
       message: 'Si el email existe, recibirás un código para resetear tu contraseña',
-      code: code // Solo para testing - en producción esto se envía por email
+      code: code // Solo para testing - remover en producción
     });
   } catch (error) {
     console.error('[auth] Request reset error:', error);
