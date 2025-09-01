@@ -366,6 +366,37 @@ app.get('/api/conversations', async (req, res) => {
   }
 });
 
+// GET /api/conversations/:id/messages - Obtener mensajes de una conversación específica
+app.get('/api/conversations/:id/messages', async (req, res) => {
+  try {
+    let userId = null;
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.slice(7);
+      try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        userId = payload?.userId || null;
+      } catch (_) {}
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Token requerido' });
+    }
+
+    const conversationId = req.params.id;
+    const messages = await getHistory(userId, conversationId);
+    
+    res.json({
+      ok: true,
+      conversationId: conversationId,
+      messages: messages
+    });
+  } catch (error) {
+    console.error('[conversations] Error getting messages:', error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+});
+
 // POST /api/conversations - Crear/actualizar conversación
 app.post('/api/conversations', async (req, res) => {
   try {
@@ -692,27 +723,18 @@ app.post('/api/auth/request-reset', async (req, res) => {
     const emailKey = `alma:user:email:${email.toLowerCase()}`;
     const userId = await redis.get(emailKey);
     
-    if (!userId) {
-      // Por seguridad, no revelamos si el email existe o no
-      return res.json({ 
-        ok: true, 
-        message: 'Si el email existe, recibirás instrucciones para resetear tu contraseña' 
-      });
-    }
-
-    // Generar token de reset
-    const resetToken = Math.random().toString(36).substr(2, 32);
-    const resetKey = `alma:reset:${resetToken}`;
+    // Generar código de 6 dígitos siempre (para no revelar si el email existe)
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const resetKey = `alma:reset:${email.toLowerCase()}`;
     
-    // Guardar token con expiración de 1 hora
-    await redis.set(resetKey, userId, { ex: 3600 });
+    // Guardar código con expiración de 15 minutos
+    await redis.set(resetKey, code, { ex: 15 * 60 });
 
-    // En un entorno real, aquí enviarías un email
-    // Por ahora solo devolvemos el token para testing
+    // Por seguridad, siempre respondemos ok
     res.json({
       ok: true,
-      message: 'Si el email existe, recibirás instrucciones para resetear tu contraseña',
-      resetToken: resetToken // Solo para testing, remover en producción
+      message: 'Si el email existe, recibirás un código para resetear tu contraseña',
+      code: code // Solo para testing - en producción esto se envía por email
     });
   } catch (error) {
     console.error('[auth] Request reset error:', error);
@@ -723,21 +745,38 @@ app.post('/api/auth/request-reset', async (req, res) => {
 // Reset de contraseña
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
-    const { resetToken, newPassword } = req.body || {};
+    const { email, code, newPassword } = req.body || {};
     
-    if (!resetToken || !newPassword) {
-      return res.status(400).json({ error: 'Token y nueva contraseña requeridos' });
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: 'Email, código y nueva contraseña requeridos' });
     }
 
     if (newPassword.length < 6) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
     }
 
-    const resetKey = `alma:reset:${resetToken}`;
-    const userId = await redis.get(resetKey);
+    // Verificar código
+    const resetKey = `alma:reset:${email.toLowerCase()}`;
+    const storedCode = await redis.get(resetKey);
+    
+    console.log('[reset-password] Debug:', { 
+      email: email.toLowerCase(), 
+      resetKey, 
+      storedCode, 
+      providedCode: code,
+      match: storedCode === code 
+    });
+    
+    if (!storedCode || storedCode !== code) {
+      return res.status(400).json({ error: 'Código inválido o expirado' });
+    }
+
+    // Buscar usuario por email
+    const emailKey = `alma:user:email:${email.toLowerCase()}`;
+    const userId = await redis.get(emailKey);
     
     if (!userId) {
-      return res.status(400).json({ error: 'Token inválido o expirado' });
+      return res.status(400).json({ error: 'Usuario no encontrado' });
     }
 
     // Cargar datos del usuario
@@ -759,7 +798,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     await redis.set(userKey, JSON.stringify(user));
     
-    // Eliminar token de reset
+    // Eliminar código de reset
     await redis.del(resetKey);
 
     res.json({
