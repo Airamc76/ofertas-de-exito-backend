@@ -213,6 +213,29 @@ app.post('/api/chat/debug', (req, res) => {
   }
 });
 
+// Endpoint de debugging para Redis
+app.get('/api/debug/redis/:userId/:conversationId', async (req, res) => {
+  try {
+    const { userId, conversationId } = req.params;
+    const chatKey = `chat:${userId}:${conversationId}`;
+    const listKey = `conversations:${userId}`;
+    
+    const rawData = await redis.get(chatKey);
+    const conversations = await redis.get(listKey);
+    
+    res.json({
+      ok: true,
+      chatKey,
+      rawData,
+      rawDataType: typeof rawData,
+      normalizedData: normalizeHistory(rawData),
+      conversations
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /* ==========================
    5) Endpoint principal
    ========================== */
@@ -385,6 +408,15 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 
     const conversationId = req.params.id;
     const messages = await getHistory(userId, conversationId);
+    
+    // Debug logging para identificar el problema
+    console.log('[messages] Debug:', {
+      userId,
+      conversationId,
+      messagesCount: messages.length,
+      redisKey: `chat:${userId}:${conversationId}`,
+      firstMessage: messages[0] || 'none'
+    });
     
     res.json({
       ok: true,
