@@ -798,15 +798,21 @@ app.post('/api/auth/reset-password', async (req, res) => {
     const resetKey = `alma:reset:${email.toLowerCase()}`;
     const storedCode = await redis.get(resetKey);
     
+    // Normalizar ambos códigos a string para comparación
+    const normalizedStored = String(storedCode || '').trim();
+    const normalizedProvided = String(code || '').trim();
+    
     console.log('[reset-password] Debug:', { 
       email: email.toLowerCase(), 
       resetKey, 
       storedCode, 
       providedCode: code,
-      match: storedCode === code 
+      normalizedStored,
+      normalizedProvided,
+      match: normalizedStored === normalizedProvided 
     });
     
-    if (!storedCode || storedCode !== code) {
+    if (!normalizedStored || normalizedStored !== normalizedProvided) {
       return res.status(400).json({ error: 'Código inválido o expirado' });
     }
 
