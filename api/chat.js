@@ -67,7 +67,7 @@ app.options('*', (_req, res) => {
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   return res.sendStatus(204);
 });
-app.use(express.json());
+app.use(express.json({ limit: '1mb', type: ['application/json', 'application/*+json'] }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: 'text/*' }));
 
@@ -157,9 +157,11 @@ app.delete('/api/conversations/:id', client, (req, res) => {
 });
 
 // Manejador de errores de parseo JSON para responder en JSON y no HTML
-app.use((err, _req, res, next) => {
+app.use((err, req, res, next) => {
   if (err && err.type === 'entity.parse.failed') {
-    return res.status(400).json({ error: 'JSON inválido en el cuerpo de la solicitud' });
+    // Fallback tolerante: si no se pudo parsear, seguimos con body vacío
+    try { req.body = {}; } catch { /* ignore */ }
+    return next();
   }
   next(err);
 });
