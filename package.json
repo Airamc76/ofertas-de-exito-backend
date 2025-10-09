@@ -8,7 +8,6 @@
     "start": "node api/chat.js"
   },
   "dependencies": {
-    "@upstash/redis": "^1.28.3",
     "axios": "^1.6.8",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

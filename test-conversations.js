@@ -1,7 +1,7 @@
 // test-conversations.js - Prueba del sistema estilo ChatGPT
 import { Redis } from '@upstash/redis';
 import dotenv from 'dotenv';
-//import axios from 'axios';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -89,8 +89,13 @@ async function testConversations() {
     const deleteResponse = await axios.delete(`${API_URL}/api/conversations/${secondConv.id}`, { headers });
     console.log('✅ Conversation deleted:', deleteResponse.data);
 
-    // Test 9: Verify final state
-    console.log('\n9️⃣ Verifying final state...');
+    // Test 9: Get messages from specific conversation
+    console.log('\n9️⃣ Getting messages from conversation...');
+    const messagesResponse = await axios.get(`${API_URL}/api/conversations/${newConv.id}/messages`, { headers });
+    console.log('✅ Messages retrieved:', messagesResponse.data);
+
+    // Test 10: Verify final state
+    console.log('\n🔟 Verifying final state...');
     const finalListResponse = await axios.get(`${API_URL}/api/conversations`, { headers });
     console.log('✅ Final conversations list:', finalListResponse.data);
 
@@ -100,6 +105,7 @@ async function testConversations() {
     console.log('- ✅ POST /api/conversations');  
     console.log('- ✅ PUT /api/conversations/:id');
     console.log('- ✅ DELETE /api/conversations/:id');
+    console.log('- ✅ GET /api/conversations/:id/messages');
 
   } catch (error) {
     console.error('❌ ERROR:', error.message);

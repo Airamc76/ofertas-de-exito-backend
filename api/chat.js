@@ -5,9 +5,10 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
-import { Redis } from '@upstash/redis';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import client from '../src/middleware/client.js';
+import { conversationListStore as convStoreMem, chatStore as chatStoreMem } from '../src/store/memory.js';
 
 dotenv.config();
 
@@ -41,22 +42,119 @@ Reglas obligatorias:
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const JWT_SECRET     = process.env.JWT_SECRET || 'change-me';
 const PORT           = process.env.PORT || 3000;
-
 if (!OPENAI_API_KEY) {
   console.warn('[chat] Falta OPENAI_API_KEY en variables de entorno');
 }
 
+// Middleware de headers CORS (asegura x-client-id en TODAS las respuestas)
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-app.use(cors());
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-client-id', 'Authorization'],
+}));
+
+app.options('*', (_req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  return res.sendStatus(204);
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: 'text/*' }));
+
+// Rutas públicas basadas en x-client-id (sin auth): conversaciones y mensajes
+// GET/POST /api/conversations
+app.get('/api/conversations', client, (req, res) => {
+  const clientId = req.clientId;
+  const list = convStoreMem.get(clientId) || [];
+  const sorted = [...list].sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  return res.json(sorted);
+});
+
+app.post('/api/conversations', client, (req, res) => {
+  const clientId = req.clientId;
+  const { title } = req.body || {};
+  const conv = {
+    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+    title: title || 'Nueva conversación',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const list = convStoreMem.get(clientId) || [];
+  convStoreMem.set(clientId, [conv, ...list]);
+  return res.status(201).json(conv);
+});
+
+// Alias para compatibilidad: /api/chat/conversations (GET/POST)
+app.get('/api/chat/conversations', client, (req, res) => {
+  const clientId = req.clientId;
+  const list = convStoreMem.get(clientId) || [];
+  const sorted = [...list].sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  return res.json(sorted);
+});
+
+app.post('/api/chat/conversations', client, (req, res) => {
+  const clientId = req.clientId;
+  const { title } = req.body || {};
+  const conv = {
+    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+    title: title || 'Nueva conversación',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const list = convStoreMem.get(clientId) || [];
+  convStoreMem.set(clientId, [conv, ...list]);
+  return res.status(201).json(conv);
+});
+
+// GET/POST/DELETE /api/conversations/:id/messages
+app.get('/api/conversations/:id/messages', client, (req, res) => {
+  const clientId = req.clientId;
+  const { id } = req.params;
+  const list = convStoreMem.get(clientId) || [];
+  const conv = list.find(c => c.id === id);
+  if (!conv) return res.status(404).json({ error: 'conversation not found for this client' });
+  const messages = chatStoreMem.get(id) || [];
+  return res.json({ session: { id: conv.id, title: conv.title }, messages });
+});
+
+app.post('/api/conversations/:id/messages', client, (req, res) => {
+  const clientId = req.clientId;
+  const { id } = req.params;
+  const { role, content, metadata } = req.body || {};
+  if (!role || !content) return res.status(400).json({ error: 'role and content required' });
+  const list = convStoreMem.get(clientId) || [];
+  const conv = list.find(c => c.id === id);
+  if (!conv) return res.status(404).json({ error: 'conversation not found for this client' });
+  const messages = chatStoreMem.get(id) || [];
+  const msg = { role, content, metadata: metadata ?? {}, createdAt: new Date().toISOString() };
+  messages.push(msg);
+  chatStoreMem.set(id, messages);
+  conv.updatedAt = new Date().toISOString();
+  convStoreMem.set(clientId, [conv, ...list.filter(c => c.id !== id)]);
+  return res.status(201).json(msg);
+});
+
+app.delete('/api/conversations/:id', client, (req, res) => {
+  const clientId = req.clientId;
+  const { id } = req.params;
+  const list = convStoreMem.get(clientId) || [];
+  const conv = list.find(c => c.id === id);
+  if (!conv) return res.status(404).json({ error: 'conversation not found for this client' });
+  chatStoreMem.delete(id);
+  const nextList = list.filter(c => c.id !== id);
+  convStoreMem.set(clientId, nextList);
+  return res.status(204).end();
+});
 
 // Manejador de errores de parseo JSON para responder en JSON y no HTML
 app.use((err, _req, res, next) => {
@@ -67,13 +165,19 @@ app.use((err, _req, res, next) => {
 });
 
 /* ==========================
-   2) Historial con Redis
+   2) Historial y usuarios (In-Memory Store)
    ========================== */
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+// Almacenamiento en memoria (temporal) para reemplazar Redis
+// Conversaciones: key -> `chat:${userId}:${conversationId}` => [messages]
+const chatStore = new Map();
+// Lista de conversaciones por usuario: key -> `conversations:${userId}` => [{id,title,...}]
+const conversationListStore = new Map();
+// Usuarios: por ID y por email
+const usersStore = new Map(); // key -> `alma:user:${userId}` => userData
+const emailToUserIdStore = new Map(); // key -> `alma:user:email:${email}` => userId
+// Códigos de reset
+const resetCodesStore = new Map(); // key -> `alma:reset:${email}` => code
 
 const MAX_TURNS = 100; // Suficiente para ~3 meses de uso regular
 
@@ -84,7 +188,7 @@ function tryParseJSON(val) {
 }
 
 function normalizeHistory(raw) {
-  // Upstash puede devolver strings (JSON) si se guardó así en el pasado
+  // Aceptar string JSON o arreglo directo
   const val = typeof raw === 'string' ? (tryParseJSON(raw) ?? raw) : raw;
   if (!Array.isArray(val)) return [];
   // Aceptar solo elementos con role y content válidos
@@ -112,10 +216,10 @@ async function getHistory(userId, conversationId = 'default') {
   if (!userId) return [];
   try {
     const key = `chat:${userId}:${conversationId}`;
-    const history = await redis.get(key);
+    const history = chatStore.get(key) || [];
     return normalizeHistory(history);
   } catch (error) {
-    console.error('[chat] Error getting history:', error);
+    console.error('[chat] Error getting history (store):', error);
     return [];
   }
 }
@@ -131,24 +235,25 @@ async function saveTurn(userId, userMsg, assistantMsg, conversationId = 'default
     if (extra) hist.splice(0, extra);
 
     const key = `chat:${userId}:${conversationId}`;
-    await redis.set(key, hist);
+    chatStore.set(key, hist);
     
     // Guardar lista de conversaciones del usuario
-    await saveConversationList(userId, conversationId, userMsg);
+    await saveConversationList(userId, conversationId, userMsg || assistantMsg || '');
   } catch (error) {
-    console.error('[chat] Error saving turn:', error);
+    console.error('[chat] Error saving turn (store):', error);
   }
 }
 
 async function saveConversationList(userId, conversationId, firstMessage) {
   try {
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     // Verificar si ya existe
     const existing = conversations.find(c => c.id === conversationId);
     if (!existing) {
-      const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? '...' : '');
+      const safeMsg = String(firstMessage || 'Nueva conversación');
+      const title = safeMsg.slice(0, 50) + (safeMsg.length > 50 ? '...' : '');
       conversations.unshift({
         id: conversationId,
         title,
@@ -161,14 +266,14 @@ async function saveConversationList(userId, conversationId, firstMessage) {
         conversations.splice(20);
       }
       
-      await redis.set(listKey, conversations);
+      conversationListStore.set(listKey, conversations);
     } else {
       // Actualizar timestamp
       existing.updatedAt = new Date().toISOString();
-      await redis.set(listKey, conversations);
+      conversationListStore.set(listKey, conversations);
     }
   } catch (error) {
-    console.error('[chat] Error saving conversation list:', error);
+    console.error('[chat] Error saving conversation list (store):', error);
   }
 }
 
@@ -213,15 +318,15 @@ app.post('/api/chat/debug', (req, res) => {
   }
 });
 
-// Endpoint de debugging para Redis
-app.get('/api/debug/redis/:userId/:conversationId', async (req, res) => {
+// Endpoint de debugging del store en memoria
+app.get('/api/debug/store/:userId/:conversationId', async (req, res) => {
   try {
     const { userId, conversationId } = req.params;
     const chatKey = `chat:${userId}:${conversationId}`;
     const listKey = `conversations:${userId}`;
     
-    const rawData = await redis.get(chatKey);
-    const conversations = await redis.get(listKey);
+    const rawData = chatStore.get(chatKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     res.json({
       ok: true,
@@ -333,7 +438,7 @@ app.post('/api/chat', async (req, res) => {
       conversationId,
       messageLength: mensaje.length,
       responseLength: assistantMsg.length,
-      redisKey: `chat:${userId}:${conversationId}`
+      storeKey: `chat:${userId}:${conversationId}`
     });
 
     res.json({
@@ -385,7 +490,7 @@ app.get('/api/conversations', async (req, res) => {
     }
 
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     res.json({
       ok: true,
@@ -422,7 +527,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
       userId,
       conversationId,
       messagesCount: messages.length,
-      redisKey: `chat:${userId}:${conversationId}`,
+      storeKey: `chat:${userId}:${conversationId}`,
       firstMessage: messages[0] || 'none'
     });
     
@@ -461,7 +566,7 @@ app.post('/api/conversations', async (req, res) => {
     }
 
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     // Buscar conversación existente
     const existingIndex = conversations.findIndex(c => c.id === id);
@@ -485,19 +590,14 @@ app.post('/api/conversations', async (req, res) => {
       }
     }
 
-    await redis.set(listKey, conversations);
+    conversationListStore.set(listKey, conversations);
 
     // Si se proporcionan mensajes, normalizarlos antes de guardar
     if (messages && Array.isArray(messages)) {
       const normalized = normalizeMessagesArray(messages);
       const chatKey = `chat:${userId}:${id}`;
-      await redis.set(chatKey, normalized);
+      chatStore.set(chatKey, normalized);
     }
-
-    res.json({
-      ok: true,
-      conversation: conversationData
-    });
   } catch (error) {
     console.error('[conversations] Error creating/updating conversation:', error);
     res.status(500).json({ error: 'Error en el servidor' });
@@ -525,7 +625,7 @@ app.put('/api/conversations/:id', async (req, res) => {
     const { title, messages } = req.body;
 
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     const existingIndex = conversations.findIndex(c => c.id === conversationId);
     
@@ -539,13 +639,13 @@ app.put('/api/conversations/:id', async (req, res) => {
     }
     conversations[existingIndex].updatedAt = new Date().toISOString();
 
-    await redis.set(listKey, conversations);
+    conversationListStore.set(listKey, conversations);
 
     // Actualizar mensajes si se proporcionan (normalizados)
     if (messages && Array.isArray(messages)) {
       const normalized = normalizeMessagesArray(messages);
       const chatKey = `chat:${userId}:${conversationId}`;
-      await redis.set(chatKey, normalized);
+      chatStore.set(chatKey, normalized);
     }
 
     res.json({
@@ -578,7 +678,7 @@ app.delete('/api/conversations/:id', async (req, res) => {
     const conversationId = req.params.id;
 
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     const filteredConversations = conversations.filter(c => c.id !== conversationId);
     
@@ -586,11 +686,11 @@ app.delete('/api/conversations/:id', async (req, res) => {
       return res.status(404).json({ error: 'Conversación no encontrada' });
     }
 
-    await redis.set(listKey, filteredConversations);
+    conversationListStore.set(listKey, filteredConversations);
 
     // Eliminar también el historial de mensajes
     const chatKey = `chat:${userId}:${conversationId}`;
-    await redis.del(chatKey);
+    chatStore.delete(chatKey);
 
     res.json({
       ok: true,
@@ -620,7 +720,7 @@ app.get('/api/chat/conversations', async (req, res) => {
     }
 
     const listKey = `conversations:${userId}`;
-    const conversations = await redis.get(listKey) || [];
+    const conversations = conversationListStore.get(listKey) || [];
     
     res.json({
       ok: true,
@@ -647,7 +747,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Buscar usuario por email
     const emailKey = `alma:user:email:${email.toLowerCase()}`;
-    const userId = await redis.get(emailKey);
+    const userId = emailToUserIdStore.get(emailKey);
     
     if (!userId) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
@@ -655,7 +755,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Cargar datos del usuario
     const userKey = `alma:user:${userId}`;
-    const userData = await redis.get(userKey);
+    const userData = usersStore.get(userKey);
     
     if (!userData) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
@@ -709,7 +809,7 @@ app.post('/api/auth/register', async (req, res) => {
     const emailKey = `alma:user:email:${email.toLowerCase()}`;
     
     // Verificar si el usuario ya existe
-    const existingUserId = await redis.get(emailKey);
+    const existingUserId = emailToUserIdStore.get(emailKey);
     if (existingUserId) {
       return res.status(400).json({ error: 'El usuario ya existe' });
     }
@@ -730,8 +830,8 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Guardar usuario
     const userKey = `alma:user:${userId}`;
-    await redis.set(userKey, JSON.stringify(userData));
-    await redis.set(emailKey, userId);
+    usersStore.set(userKey, userData);
+    emailToUserIdStore.set(emailKey, userId);
 
     // Generar token JWT
     const token = jwt.sign(
@@ -761,14 +861,15 @@ app.post('/api/auth/request-reset', async (req, res) => {
     }
 
     const emailKey = `alma:user:email:${email.toLowerCase()}`;
-    const userId = await redis.get(emailKey);
+    const userId = emailToUserIdStore.get(emailKey);
     
     // Generar código de 6 dígitos siempre (para no revelar si el email existe)
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const resetKey = `alma:reset:${email.toLowerCase()}`;
     
-    // Guardar código con expiración de 15 minutos
-    await redis.set(resetKey, code, { ex: 15 * 60 });
+    // Guardar código con expiración de 15 minutos (in-memory)
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    resetCodesStore.set(resetKey, { code, expiresAt });
 
     // Enviar email con Resend (solo si el usuario existe)
     if (userId && process.env.RESEND_API_KEY) {
@@ -836,7 +937,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
     // Verificar código
     const resetKey = `alma:reset:${email.toLowerCase()}`;
-    const storedCode = await redis.get(resetKey);
+    const entry = resetCodesStore.get(resetKey);
+    const storedCode = entry && entry.expiresAt > Date.now() ? entry.code : '';
     
     // Normalizar ambos códigos a string para comparación
     const normalizedStored = String(storedCode || '').trim();
@@ -856,23 +958,21 @@ app.post('/api/auth/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Código inválido o expirado' });
     }
 
-    // Buscar usuario por email
+    // Buscar usuario por email (in-memory)
     const emailKey = `alma:user:email:${email.toLowerCase()}`;
-    const userId = await redis.get(emailKey);
-    
+    const userId = emailToUserIdStore.get(emailKey);
     if (!userId) {
       return res.status(400).json({ error: 'Usuario no encontrado' });
     }
 
-    // Cargar datos del usuario
+    // Cargar datos del usuario (in-memory)
     const userKey = `alma:user:${userId}`;
-    const userData = await redis.get(userKey);
-    
+    const userData = usersStore.get(userKey);
     if (!userData) {
       return res.status(400).json({ error: 'Usuario no encontrado' });
     }
-
-    const user = typeof userData === 'string' ? JSON.parse(userData) : userData;
+    // Asegurar objeto mutable
+    const user = typeof userData === 'string' ? JSON.parse(userData) : { ...userData };
 
     // Hash de la nueva contraseña
     const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -881,10 +981,10 @@ app.post('/api/auth/reset-password', async (req, res) => {
     user.passwordHash = passwordHash;
     user.updatedAt = new Date().toISOString();
 
-    await redis.set(userKey, JSON.stringify(user));
+    usersStore.set(userKey, user);
     
     // Eliminar código de reset
-    await redis.del(resetKey);
+    resetCodesStore.delete(resetKey);
 
     res.json({
       ok: true,

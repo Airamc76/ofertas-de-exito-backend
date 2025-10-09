@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alma - Chat con Persistencia</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: white;
+            height: 100vh;
+            display: flex;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .new-chat-btn:hover {
+            background: #2563eb;
+        }
+
+        .conversations-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .conversation-item {
+            padding: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .conversation-item:hover {
+            background-color: #334155;
+        }
+
+        .conversation-item.active {
+            background-color: #3b82f6;
+        }
+
+        .conversation-title {
+            font-weight: 500;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .conversation-date {
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid #334155;
+            background: #1e293b;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #3b82f6;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        .message.assistant {
+            background: #374151;
+            align-self: flex-start;
+        }
+
+        .message-content {
+            margin-bottom: 4px;
+            line-height: 1.5;
+        }
+
+        .message-time {
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+
+        .chat-input-container {
+            padding: 20px;
+            border-top: 1px solid #334155;
+            background: #1e293b;
+        }
+
+        .chat-input-form {
+            display: flex;
+            gap: 12px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            background: #374151;
+            border: 1px solid #4b5563;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .send-btn {
+            padding: 12px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .send-btn:hover {
+            background: #2563eb;
+        }
+
+        .send-btn:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+
+        .no-conversations {
+            padding: 20px;
+            text-align: center;
+            color: #6b7280;
+            font-style: italic;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #6b7280;
+        }
+
+        .error {
+            background: #dc2626;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px;
+        }
+
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: #0f172a;
+        }
+
+        .login-form {
+            background: #1e293b;
+            padding: 40px;
+            border-radius: 12px;
+            width: 400px;
+            max-width: 90vw;
+        }
+
+        .login-form h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #3b82f6;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #e2e8f0;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            background: #374151;
+            border: 1px solid #4b5563;
+            border-radius: 8px;
+            color: white;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Pantalla de login -->
+    <div id="login-screen" class="login-container">
+        <div class="login-form">
+            <h2>Alma - Iniciar Sesión</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Contraseña:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="login-btn">Iniciar Sesión</button>
+                <button type="button" id="register-btn" class="login-btn" style="background: #059669;">Registrarse</button>
+            </form>
+            <div id="login-error" class="error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Aplicación principal -->
+    <div id="main-app" style="display: none; width: 100%; height: 100vh; display: flex;">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <button class="new-chat-btn" id="new-chat-btn">+ Nueva Conversación</button>
+            </div>
+            <div class="conversations-container">
+                <div id="conversations-list" class="loading">Cargando conversaciones...</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="chat-header">
+                <h1>Alma - Tu Experta en Ventas Online</h1>
+                <button id="logout-btn" style="float: right; background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Cerrar Sesión</button>
+            </div>
+            
+            <div id="chat-messages" class="chat-messages">
+                <div class="message assistant">
+                    <div class="message-content">¡Hola! Soy Alma, tu experta en ventas online. Estoy aquí para ayudarte a convertir tus ideas en ventas digitales exitosas. ¿En qué puedo ayudarte hoy?</div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <form class="chat-input-form" id="chat-form">
+                    <input type="text" class="chat-input" id="message-input" placeholder="Escribe tu mensaje aquí..." required>
+                    <button type="submit" class="send-btn" id="send-btn">Enviar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuración
+        const API_URL = 'https://ofertas-de-exito-backend.vercel.app';
+        
+        // Variables globales
+        let authToken = localStorage.getItem('authToken');
+        let currentConversationId = null;
+        let conversations = [];
+
+        // Elementos del DOM
+        const loginScreen = document.getElementById('login-screen');
+        const mainApp = document.getElementById('main-app');
+        const loginForm = document.getElementById('login-form');
+        const registerBtn = document.getElementById('register-btn');
+        const loginError = document.getElementById('login-error');
+        const conversationsList = document.getElementById('conversations-list');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+
+        // Funciones de utilidad
+        function getHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            };
+        }
+
+        function showError(message) {
+            loginError.textContent = message;
+            loginError.style.display = 'block';
+            setTimeout(() => {
+                loginError.style.display = 'none';
+            }, 5000);
+        }
+
+        // Autenticación
+        async function login(email, password) {
+            try {
+                const response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en el login');
+                }
+
+                authToken = data.token;
+                localStorage.setItem('authToken', authToken);
+                
+                showMainApp();
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function register(email, password) {
+            try {
+                const response = await fetch(`${API_URL}/api/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en el registro');
+                }
+
+                authToken = data.token;
+                localStorage.setItem('authToken', authToken);
+                
+                showMainApp();
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            localStorage.removeItem('authToken');
+            currentConversationId = null;
+            conversations = [];
+            loginScreen.style.display = 'flex';
+            mainApp.style.display = 'none';
+        }
+
+        function showMainApp() {
+            loginScreen.style.display = 'none';
+            mainApp.style.display = 'flex';
+            initializeApp();
+        }
+
+        // Gestión de conversaciones
+        async function loadConversations() {
+            try {
+                conversationsList.innerHTML = '<div class="loading">Cargando conversaciones...</div>';
+                
+                const response = await fetch(`${API_URL}/api/conversations`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error cargando conversaciones');
+                }
+
+                const data = await response.json();
+                conversations = data.conversations || [];
+                
+                renderConversationsList();
+                
+                // Cargar la conversación más reciente si existe
+                if (conversations.length > 0) {
+                    selectConversation(conversations[0].id);
+                }
+            } catch (error) {
+                console.error('Error cargando conversaciones:', error);
+                conversationsList.innerHTML = '<div class="error">Error cargando conversaciones</div>';
+            }
+        }
+
+        function renderConversationsList() {
+            if (conversations.length === 0) {
+                conversationsList.innerHTML = '<div class="no-conversations">No hay conversaciones</div>';
+                return;
+            }
+
+            conversationsList.innerHTML = '';
+            
+            conversations.forEach(conv => {
+                const convElement = document.createElement('div');
+                convElement.className = 'conversation-item';
+                convElement.dataset.conversationId = conv.id;
+                
+                convElement.innerHTML = `
+                    <div class="conversation-title">${conv.title}</div>
+                    <div class="conversation-date">${new Date(conv.updatedAt).toLocaleDateString()}</div>
+                `;
+
+                convElement.addEventListener('click', () => {
+                    selectConversation(conv.id);
+                });
+
+                conversationsList.appendChild(convElement);
+            });
+        }
+
+        async function selectConversation(conversationId) {
+            try {
+                currentConversationId = conversationId;
+                
+                // Marcar como activa en la UI
+                document.querySelectorAll('.conversation-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                
+                const activeItem = document.querySelector(`[data-conversation-id="${conversationId}"]`);
+                if (activeItem) {
+                    activeItem.classList.add('active');
+                }
+
+                // Cargar mensajes
+                const response = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error cargando mensajes');
+                }
+
+                const data = await response.json();
+                renderMessages(data.messages || []);
+                
+            } catch (error) {
+                console.error('Error seleccionando conversación:', error);
+            }
+        }
+
+        function renderMessages(messages) {
+            chatMessages.innerHTML = '';
+
+            messages.forEach(message => {
+                if (message.role === 'system') return;
+
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${message.role}`;
+                
+                messageElement.innerHTML = `
+                    <div class="message-content">${message.content}</div>
+                    ${message.timestamp ? `<div class="message-time">${new Date(message.timestamp).toLocaleTimeString()}</div>` : ''}
+                `;
+
+                chatMessages.appendChild(messageElement);
+            });
+
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function createNewConversation() {
+            currentConversationId = `conv_${Date.now()}`;
+            
+            // Limpiar selección actual
+            document.querySelectorAll('.conversation-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Limpiar chat
+            chatMessages.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-content">¡Hola! Soy Alma, tu experta en ventas online. Estoy aquí para ayudarte a convertir tus ideas en ventas digitales exitosas. ¿En qué puedo ayudarte hoy?</div>
+                </div>
+            `;
+        }
+
+        async function sendMessage(message) {
+            try {
+                sendBtn.disabled = true;
+                sendBtn.textContent = 'Enviando...';
+
+                if (!currentConversationId) {
+                    createNewConversation();
+                }
+
+                // Mostrar mensaje del usuario inmediatamente
+                const userMessageElement = document.createElement('div');
+                userMessageElement.className = 'message user';
+                userMessageElement.innerHTML = `
+                    <div class="message-content">${message}</div>
+                    <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                `;
+                chatMessages.appendChild(userMessageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                const response = await fetch(`${API_URL}/api/chat`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        mensaje: message,
+                        conversationId: currentConversationId
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Error enviando mensaje');
+                }
+
+                const data = await response.json();
+                
+                // Mostrar respuesta de Alma
+                const assistantMessageElement = document.createElement('div');
+                assistantMessageElement.className = 'message assistant';
+                assistantMessageElement.innerHTML = `
+                    <div class="message-content">${data.respuesta}</div>
+                    <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                `;
+                chatMessages.appendChild(assistantMessageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                // Recargar lista de conversaciones
+                await loadConversations();
+
+            } catch (error) {
+                console.error('Error enviando mensaje:', error);
+                showError('Error enviando mensaje');
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Enviar';
+            }
+        }
+
+        // Event listeners
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            login(email, password);
+        });
+
+        registerBtn.addEventListener('click', () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                showError('Por favor completa todos los campos');
+                return;
+            }
+            
+            register(email, password);
+        });
+
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = messageInput.value.trim();
+            if (message) {
+                sendMessage(message);
+                messageInput.value = '';
+            }
+        });
+
+        newChatBtn.addEventListener('click', createNewConversation);
+        logoutBtn.addEventListener('click', logout);
+
+        // Inicialización
+        async function initializeApp() {
+            await loadConversations();
+        }
+
+        // Verificar si ya está autenticado al cargar la página
+        if (authToken) {
+            showMainApp();
+        } else {
+            loginScreen.style.display = 'flex';
+            mainApp.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
