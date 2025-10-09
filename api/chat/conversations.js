@@ -20,24 +20,24 @@ function allowCors(handler) {
   };
 }
 
-// JSON reader robusto: object | string | Buffer | Uint8Array | stream
+// JSON reader robusto y tolerante: object | string | Buffer | Uint8Array | stream
 async function getJson(req) {
   const b = req.body;
   if (b !== undefined && b !== null) {
     if (typeof b === 'object' && !Buffer.isBuffer(b) && !(b instanceof Uint8Array)) return b;
     if (typeof b === 'string') {
-      try { return JSON.parse(b); } catch { throw new Error('BAD_JSON'); }
+      try { return JSON.parse(b); } catch { return {}; }
     }
     if (Buffer.isBuffer(b) || b instanceof Uint8Array) {
       const s = Buffer.from(b).toString('utf8');
-      try { return JSON.parse(s); } catch { throw new Error('BAD_JSON'); }
+      try { return JSON.parse(s); } catch { return {}; }
     }
   }
   const chunks = [];
   for await (const ch of req) chunks.push(ch);
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
-  try { return JSON.parse(raw); } catch { throw new Error('BAD_JSON'); }
+  try { return JSON.parse(raw); } catch { return {}; }
 }
 
 // Memoria por instancia (global) para no reinicializar en hot reloads
@@ -48,11 +48,10 @@ export default allowCors(async function handler(req, res) {
   const clientId = req.headers['x-client-id'];
   if (!clientId) return res.status(400).json({ error: 'missing x-client-id' });
 
-  // Body robusto (serverless)
+  // Body robusto (serverless) y tolerante a JSON inválido
   let body = {};
   if (req.method === 'POST') {
-    try { body = await getJson(req); }
-    catch { return res.status(400).json({ error: 'JSON inválido en el cuerpo de la solicitud' }); }
+    body = await getJson(req); // si no parsea, getJson devuelve {}
   }
 
   if (req.method === 'GET') {
