@@ -94,15 +94,16 @@ app.post('/api/conversations', client, (req, res) => {
   return res.status(201).json(conv);
 });
 
-// Alias para compatibilidad: /api/chat/conversations (GET/POST)
-app.get('/api/chat/conversations', client, (req, res) => {
+// Alias para compatibilidad: montar ambas variantes (con y sin prefijo)
+const CONV_PATHS = ['/api/chat/conversations', '/conversations'];
+app.get(CONV_PATHS, client, (req, res) => {
   const clientId = req.clientId;
   const list = convStoreMem.get(clientId) || [];
   const sorted = [...list].sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   return res.json(sorted);
 });
 
-app.post('/api/chat/conversations', client, (req, res) => {
+app.post(CONV_PATHS, client, (req, res) => {
   const clientId = req.clientId;
   const { title } = req.body || {};
   const conv = {
