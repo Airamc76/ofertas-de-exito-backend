@@ -1,27 +1,48 @@
 // api/chat/conversations.js
-// Serverless endpoint para crear/listar conversaciones por x-client-id
-
-import allowCors from '../../lib/allowCors.js';
-import { conversationListStore } from '../../src/store/memory.js';
+// Serverless endpoint para crear/listar conversaciones por x-client-id (Vercel)
+// ESM autocontenible con CORS y parser robusto de JSON
 
 function genId() {
   return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
+// CORS wrapper sin cookies, siempre agrega headers incluso en errores
+function allowCors(handler) {
+  return async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    try { return await handler(req, res); }
+    catch (e) {
+      console.error('Handler error:', e);
+      return res.status(500).json({ error: 'internal_error' });
+    }
+  };
+}
 
+// JSON reader robusto: object | string | Buffer | Uint8Array | stream
 async function getJson(req) {
-  // Si ya viene parseado por algún middleware
-  if (req.body && typeof req.body === 'object') return req.body;
-  // Si viene como string desde la plataforma
-  if (typeof req.body === 'string' && req.body.trim() !== '') {
-    try { return JSON.parse(req.body); } catch { throw new Error('BAD_JSON'); }
+  const b = req.body;
+  if (b !== undefined && b !== null) {
+    if (typeof b === 'object' && !Buffer.isBuffer(b) && !(b instanceof Uint8Array)) return b;
+    if (typeof b === 'string') {
+      try { return JSON.parse(b); } catch { throw new Error('BAD_JSON'); }
+    }
+    if (Buffer.isBuffer(b) || b instanceof Uint8Array) {
+      const s = Buffer.from(b).toString('utf8');
+      try { return JSON.parse(s); } catch { throw new Error('BAD_JSON'); }
+    }
   }
-  // Leer el stream manualmente (Vercel puede no adjuntar req.body)
   const chunks = [];
   for await (const ch of req) chunks.push(ch);
   const raw = Buffer.concat(chunks).toString('utf8');
   if (!raw) return {};
   try { return JSON.parse(raw); } catch { throw new Error('BAD_JSON'); }
 }
+
+// Memoria por instancia (global) para no reinicializar en hot reloads
+const conversationListStore = globalThis.__conv || new Map();
+if (!globalThis.__conv) globalThis.__conv = conversationListStore;
 
 export default allowCors(async function handler(req, res) {
   const clientId = req.headers['x-client-id'];
@@ -41,7 +62,7 @@ export default allowCors(async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const title = body.title || 'Nueva conversación';
+    const title = body?.title || 'Nueva conversación';
     const conv = {
       id: genId(),
       title,
