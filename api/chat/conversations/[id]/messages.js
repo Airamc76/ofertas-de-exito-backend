@@ -23,16 +23,11 @@ async function getAIResponse(prompt) {
   }
 
   try {
-    // Usar la API de OpenAI si está disponible
-    const { Configuration, OpenAIApi } = await import('openai');
-    
-    const configuration = new Configuration({
-      apiKey: openaiApiKey,
-    });
-    
-    const openai = new OpenAIApi(configuration);
-    
-    const completion = await openai.createChatCompletion({
+    // SDK v4 de OpenAI
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI({ apiKey: openaiApiKey });
+
+    const completion = await client.chat.completions.create({
       model: MODEL,
       messages: [
         { role: 'system', content: 'Eres un asistente útil y conciso.' },
@@ -40,11 +35,11 @@ async function getAIResponse(prompt) {
       ],
       temperature: 0.7,
     });
-    
-    return completion.data.choices[0]?.message?.content?.trim() || 'No pude generar una respuesta.';
-    
+
+    return completion.choices?.[0]?.message?.content?.trim() || 'No pude generar una respuesta.';
+
   } catch (error) {
-    console.error('Error al llamar a OpenAI:', error);
+    console.error('Error al llamar a OpenAI:', error?.response?.data || error?.message || error);
     return 'Lo siento, hubo un error al generar la respuesta.';
   }
 }
