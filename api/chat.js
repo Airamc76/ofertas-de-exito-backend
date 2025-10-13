@@ -18,24 +18,46 @@ const app = express();
 /* ==========================
    0) Estilo Alma + Guardas
    ========================== */
-const STYLE_PATH = path.join(process.cwd(), 'api', 'prompts', 'alma-style.md');
-let ALMA_STYLE = '';
-try {
-  ALMA_STYLE = fs.readFileSync(STYLE_PATH, 'utf8');
-} catch (e) {
-  console.warn('[chat] No se pudo leer alma-style.md. Usando fallback.', e?.message);
-  ALMA_STYLE = `
-Eres “Alma”, **experta en ventas online** y ofertas irresistibles. Tu trabajo: guiar a la persona para convertir ideas en ventas digitales usando funnels, páginas de venta, anuncios, e-mail marketing y automatización. Responde en español con bloques claros, acción inmediata y tono directo/empático.
-  `;
+// Función para cargar archivos de prompt de manera segura
+function loadPrompt(filename, fallback = '') {
+  try {
+    const filePath = path.join(process.cwd(), 'api', 'prompts', filename);
+    return fs.readFileSync(filePath, 'utf8');
+  } catch (e) {
+    console.warn(`[chat] No se pudo leer ${filename}. Usando fallback.`, e?.message);
+    return fallback;
+  }
 }
 
+// Cargar todos los prompts
+const ALMA_STYLE = loadPrompt('alma-style.md', 'Eres "Alma", **experta en ventas online** y ofertas irresistibles. Tu trabajo: guiar a la persona para convertir ideas en ventas digitales usando funnels, páginas de venta, anuncios, e-mail marketing y automatización. Responde en español con bloques claros, acción inmediata y tono directo/empático.');
+const ALMA_DIALOG = loadPrompt('alma-dialog.md', '');
+const ALMA_FEWSHOT = loadPrompt('alma-fewshot.md', '');
+const ALMA_OUTPUT = loadPrompt('alma-output.md', '');
+
 const GUARD = `
-Reglas obligatorias:
-- Cualquier precio, descuento, fecha o cupo es “EJEMPLO” o “personalizable”.
+## REGLAS OBLIGATORIAS:
+- Cualquier precio, descuento, fecha o cupo es "EJEMPLO" o "personalizable".
 - No fijes importes definitivos a menos que el usuario los provea explícitamente.
 - Usa micro-decisiones (CTA breve) al final de cada bloque cuando aporte claridad.
 - Mantén el tono: claro, persuasivo, sin relleno, útil para conversión.
 `;
+
+// Combinar todos los prompts en un solo bloque de contexto
+const ALMA_CONTEXT = [
+  '## CONTEXTO Y ESTILO',
+  ALMA_STYLE,
+  '\n## GUÍA DE DIÁLOGO',
+  ALMA_DIALOG,
+  '\n## EJEMPLOS DE RESPUESTA',
+  ALMA_FEWSHOT,
+  '\n## FORMATO DE SALIDA',
+  ALMA_OUTPUT,
+  '\n## REGLAS OBLIGATORIAS',
+  GUARD,
+  '\n## CONTEXTO ADICIONAL',
+  'Responde siempre en español. Usa emojis relevantes para hacer la conversación más amigable.'
+].join('\n\n');
 
 /* ==========================
    1) Config & Middlewares
@@ -380,10 +402,9 @@ app.post('/api/chat', async (req, res) => {
 
     const history = await getHistory(userId, conversationId);
 
-    // Bloques de contexto para Alma
-    const systemBlock = `${ALMA_STYLE}\n\n${GUARD}\n\nContexto: Responde en español.`;
+    // Construir mensajes con el contexto completo
     let messages = [
-      { role: 'system', content: systemBlock },
+      { role: 'system', content: ALMA_CONTEXT },
       ...history.map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: mensaje }
     ];
@@ -392,10 +413,14 @@ app.post('/api/chat', async (req, res) => {
     if (!messages.every(isValidMessage)) {
       console.warn('[chat] Mensajes inválidos detectados. Rehaciendo sin historial.', { conversationId, userId });
       messages = [
-        { role: 'system', content: systemBlock },
+        { role: 'system', content: ALMA_CONTEXT },
         { role: 'user', content: mensaje }
       ];
     }
+
+    console.log('[chat] Enviando a OpenAI con contexto de', 
+      Math.round(ALMA_CONTEXT.length / 1024) + 'KB',
+      'y', history.length, 'mensajes de historial');
 
     const openaiResp = await withTimeout(
       axios.post(
