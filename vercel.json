@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/chat/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/chat/conversations/([^/]+)/messages",
+      "dest": "/api/chat/conversations/[id]/messages.js"
+    },
+    {
+      "src": "/api/conversations/([^/]+)/messages",
+      "dest": "/api/chat/conversations/[id]/messages.js"
+    },
+    {
+      "src": "/api/chat/conversations",
+      "dest": "/api/chat/conversations/index.js"
+    },
+    {
+      "src": "/api/conversations",
+      "dest": "/api/chat/conversations/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "status": 404,
+      "dest": "/api/chat/conversations"
+    }
+  ]
+}

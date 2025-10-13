@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import client from '../src/middleware/client.js';
 import { conversationListStore as convStoreMem, chatStore as chatStoreMem } from '../src/store/memory.js';
+import chatRoutes from '../routes/chat-conversations.js';
 
 dotenv.config();
 
@@ -71,51 +72,40 @@ app.use(express.json({ limit: '1mb', type: ['application/json', 'application/*+j
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: 'text/*' }));
 
+// Fallback: si POST llega como string/stream en Vercel, parsear tolerante
+app.use((req, res, next) => {
+  if (req.method !== 'POST') return next();
+  const ct = req.headers['content-type'] || '';
+  const looksJson = ct.includes('application/json') || (ct.includes('application/') && ct.includes('+json'));
+  if (!looksJson) return next();
+  if (req.body && typeof req.body === 'object') return next();
+  let raw = '';
+  req.setEncoding('utf8');
+  req.on('data', ch => raw += ch);
+  req.on('end', () => {
+    try { req.body = raw ? JSON.parse(raw) : {}; }
+    catch { req.body = {}; }
+    next();
+  });
+});
+
+// Logger para diagnosticar rutas en Vercel
+app.use((req, _res, next) => {
+  try { console.log('[HIT]', req.method, req.url); } catch (_) {}
+  next();
+});
+
+// Catch-all temporal para diagnosticar POST en prod
+app.post('*', (req, res, next) => {
+  try { console.log('[POST-CATCH]', req.url); } catch (_) {}
+  next();
+});
+
 // Rutas públicas basadas en x-client-id (sin auth): conversaciones y mensajes
 // GET/POST /api/conversations
-app.get('/api/conversations', client, (req, res) => {
-  const clientId = req.clientId;
-  const list = convStoreMem.get(clientId) || [];
-  const sorted = [...list].sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  return res.json(sorted);
-});
+// Montar nuevas rutas de chat sin login (memoria + x-client-id)
+app.use('/api/chat', chatRoutes);
 
-app.post('/api/conversations', client, (req, res) => {
-  const clientId = req.clientId;
-  const { title } = req.body || {};
-  const conv = {
-    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
-    title: title || 'Nueva conversación',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  const list = convStoreMem.get(clientId) || [];
-  convStoreMem.set(clientId, [conv, ...list]);
-  return res.status(201).json(conv);
-});
-
-// Alias para compatibilidad: montar ambas variantes (con y sin prefijo)
-const CONV_PATHS = ['/api/chat/conversations', '/conversations'];
-app.get(CONV_PATHS, client, (req, res) => {
-  const clientId = req.clientId;
-  const list = convStoreMem.get(clientId) || [];
-  const sorted = [...list].sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  return res.json(sorted);
-});
-
-app.post(CONV_PATHS, client, (req, res) => {
-  const clientId = req.clientId;
-  const { title } = req.body || {};
-  const conv = {
-    id: `conv_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
-    title: title || 'Nueva conversación',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  const list = convStoreMem.get(clientId) || [];
-  convStoreMem.set(clientId, [conv, ...list]);
-  return res.status(201).json(conv);
-});
 
 // GET/POST/DELETE /api/conversations/:id/messages
 app.get('/api/conversations/:id/messages', client, (req, res) => {
@@ -1018,3 +1008,8 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
+
+// Compatibilidad CommonJS para Vercel (@vercel/node)
+// Permite invocar el Express app como handler serverless
+// (no rompe ESM: conviven export default y module.exports)
+module.exports = (req, res) => app(req, res);

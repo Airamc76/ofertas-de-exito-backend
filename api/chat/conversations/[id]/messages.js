@@ -1,68 +1,163 @@
 // api/chat/conversations/[id]/messages.js
-// Serverless: enviar/listar mensajes sin login (scoped por x-client-id)
+import utils from '../../../_utils.js';
+const { 
+  allowCors, 
+  readJson, 
+  getClientConversations,
+  getMessages,
+  saveMessage,
+  saveConversation
+} = utils;
 
-function allowCors(handler) {
-  return async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin','*');
-    res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers','Content-Type, x-client-id, Authorization');
-    if (req.method==='OPTIONS') return res.status(204).end();
-    try { return await handler(req,res); }
-    catch (e) { console.error(e); return res.status(500).json({ error:'internal_error' }); }
-  };
+// Configuración del modelo de IA
+const MODEL = process.env.MODEL_NAME || 'gpt-3.5-turbo';
+
+/**
+ * Función para obtener una respuesta del modelo de IA (OpenAI o demo)
+ */
+async function getAIResponse(prompt) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  
+  // Modo demo: Si no hay clave de API, devolver una respuesta de prueba
+  if (!openaiApiKey) {
+    return `Esto es una respuesta de prueba para: ${prompt}`;
+  }
+
+  try {
+    // Usar la API de OpenAI si está disponible
+    const { Configuration, OpenAIApi } = await import('openai');
+    
+    const configuration = new Configuration({
+      apiKey: openaiApiKey,
+    });
+    
+    const openai = new OpenAIApi(configuration);
+    
+    const completion = await openai.createChatCompletion({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: 'Eres un asistente útil y conciso.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.7,
+    });
+    
+    return completion.data.choices[0]?.message?.content?.trim() || 'No pude generar una respuesta.';
+    
+  } catch (error) {
+    console.error('Error al llamar a OpenAI:', error);
+    return 'Lo siento, hubo un error al generar la respuesta.';
+  }
 }
 
-async function readBody(req){
-  const b = req.body;
-  if (b!=null) {
-    if (typeof b==='object' && !Buffer.isBuffer(b) && !(b instanceof Uint8Array)) return b;
-    if (typeof b==='string') { try { return JSON.parse(b); } catch { return {}; } }
-    if (Buffer.isBuffer(b) || b instanceof Uint8Array) {
-      const s = Buffer.from(b).toString('utf8'); try { return JSON.parse(s); } catch { return {}; }
+// Manejador principal
+export default allowCors(async (req, res) => {
+  const clientId = req.headers['x-client-id'];
+  const conversationId = req.query.id;
+  
+  // Validaciones básicas
+  if (!clientId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Se requiere el encabezado x-client-id'
+    });
+  }
+  
+  if (!conversationId) {
+    return res.status(400).json({
+      success: false,
+      error: 'Se requiere el ID de la conversación'
+    });
+  }
+
+  try {
+    // Obtener la conversación del cliente
+    const conversations = getClientConversations(clientId);
+    const conversation = conversations.find(c => c.id === conversationId);
+    
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversación no encontrada para este cliente'
+      });
     }
+
+    // Manejar GET: Obtener mensajes de la conversación
+    if (req.method === 'GET') {
+      const messages = getMessages(conversationId);
+      
+      return res.json({
+        success: true,
+        data: {
+          session: {
+            id: conversation.id,
+            title: conversation.title,
+            createdAt: conversation.createdAt,
+            updatedAt: conversation.updatedAt
+          },
+          messages
+        }
+      });
+    }
+    
+    // Manejar POST: Enviar un nuevo mensaje
+    if (req.method === 'POST') {
+      const body = await readJson(req);
+      const content = body?.content?.trim();
+      
+      if (!content) {
+        return res.status(400).json({
+          success: false,
+          error: 'El contenido del mensaje es requerido'
+        });
+      }
+      
+      // Crear y guardar el mensaje del usuario
+      const userMessage = {
+        id: `msg_${Date.now()}`,
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString()
+      };
+      
+      saveMessage(conversationId, userMessage);
+      
+      // Actualizar la última actualización de la conversación
+      conversation.updatedAt = new Date().toISOString();
+      saveConversation(clientId, conversation);
+      
+      // Obtener respuesta del asistente
+      const assistantContent = await getAIResponse(content);
+      
+      // Crear y guardar la respuesta del asistente
+      const assistantMessage = {
+        id: `msg_${Date.now() + 1}`,
+        role: 'assistant',
+        content: assistantContent,
+        createdAt: new Date().toISOString()
+      };
+      
+      saveMessage(conversationId, assistantMessage);
+      
+      // Devolver solo el mensaje del asistente como respuesta
+      return res.status(201).json({
+        success: true,
+        data: assistantMessage
+      });
+    }
+    
+    // Método no permitido
+    return res.status(405).json({
+      success: false,
+      error: 'Método no permitido'
+    });
+    
+  } catch (error) {
+    console.error('Error en el manejador de mensajes:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
-  const chunks=[]; for await (const ch of req) chunks.push(ch);
-  const raw = Buffer.concat(chunks).toString('utf8');
-  if (!raw) return {};
-  try { return JSON.parse(raw); } catch { return {}; }
-}
-
-// Stores globales por instancia (no se reinician en caliente)
-const convStore = global.__conv || new Map();
-if (!global.__conv) global.__conv = convStore;
-const msgStore  = global.__msg  || new Map();
-if (!global.__msg)  global.__msg  = msgStore;
-
-module.exports = allowCors(async (req, res) => {
-  const cid = req.headers['x-client-id'];
-  if (!cid) return res.status(400).json({ error:'missing x-client-id' });
-
-  const convId = req.query.id;
-  const list = convStore.get(cid) || [];
-  const conv = list.find(c => c.id === convId);
-  if (!conv) return res.status(404).json({ error:'conversation not found for this client' });
-
-  if (req.method === 'GET') {
-    const messages = msgStore.get(convId) || [];
-    return res.json({ session: { id: conv.id, title: conv.title }, messages });
-  }
-
-  if (req.method === 'POST') {
-    const body = await readBody(req);
-    const content = body?.content ?? body?.message ?? body?.text ?? '';
-    const role    = body?.role ?? 'user';
-    if (!content) return res.status(400).json({ error:'content required' });
-
-    const arr = msgStore.get(convId) || [];
-    const msg = { role, content, metadata: body?.metadata ?? {}, createdAt: new Date().toISOString() };
-    arr.push(msg);
-    msgStore.set(convId, arr);
-
-    conv.updatedAt = new Date().toISOString();
-    convStore.set(cid, [conv, ...list.filter(c => c.id !== convId)]);
-
-    return res.status(201).json(msg);
-  }
-
-  return res.status(405).end();
 });
