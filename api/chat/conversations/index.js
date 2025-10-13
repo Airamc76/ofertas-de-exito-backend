@@ -1,6 +1,5 @@
 // api/chat/conversations/index.js
-import utils from '../../_utils.js';
-const { allowCors, readJson, getClientConversations, saveConversation } = utils;
+import { allowCors, readJson, getClientConversations, saveConversation } from '../../_utils.js';
 
 // Obtener la lista de conversaciones
 async function getConversationsHandler(req, res) {

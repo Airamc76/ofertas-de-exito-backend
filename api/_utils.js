@@ -6,7 +6,7 @@ if (!G.__convStore) G.__convStore = new Map(); // clientId -> [conversaciones]
 if (!G.__msgStore) G.__msgStore = new Map();   // convId -> [mensajes]
 
 // Función para manejar CORS
-exports.allowCors = (handler) => async (req, res) => {
+export const allowCors = (handler) => async (req, res) => {
   try {
     const origin = req.headers?.origin || '';
     let host = '';
@@ -33,7 +33,7 @@ exports.allowCors = (handler) => async (req, res) => {
 };
 
 // Función para leer el cuerpo JSON de la petición
-exports.readJson = async (req) => {
+export const readJson = async (req) => {
   try {
     if (req.body) {
       if (typeof req.body === 'string') {
@@ -59,16 +59,16 @@ exports.readJson = async (req) => {
 };
 
 // Getters para los almacenes
-exports.getConvStore = () => G.__convStore;
-exports.getMsgStore = () => G.__msgStore;
+export const getConvStore = () => G.__convStore;
+export const getMsgStore = () => G.__msgStore;
 
 // Helper para obtener conversaciones de un cliente
-exports.getClientConversations = (clientId) => {
+export const getClientConversations = (clientId) => {
   return G.__convStore.get(clientId) || [];
 };
 
 // Helper para guardar una conversación
-exports.saveConversation = (clientId, conversation) => {
+export const saveConversation = (clientId, conversation) => {
   const conversations = G.__convStore.get(clientId) || [];
   const existingIndex = conversations.findIndex(c => c.id === conversation.id);
   
@@ -83,12 +83,12 @@ exports.saveConversation = (clientId, conversation) => {
 };
 
 // Helper para obtener mensajes de una conversación
-exports.getMessages = (conversationId) => {
+export const getMessages = (conversationId) => {
   return G.__msgStore.get(conversationId) || [];
 };
 
 // Helper para guardar un mensaje
-exports.saveMessage = (conversationId, message) => {
+export const saveMessage = (conversationId, message) => {
   const messages = G.__msgStore.get(conversationId) || [];
   messages.push(message);
   G.__msgStore.set(conversationId, messages);

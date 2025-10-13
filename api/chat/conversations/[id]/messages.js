@@ -1,13 +1,12 @@
 // api/chat/conversations/[id]/messages.js
-import utils from '../../../_utils.js';
-const { 
+import { 
   allowCors, 
   readJson, 
   getClientConversations,
   getMessages,
   saveMessage,
   saveConversation
-} = utils;
+} from '../../../_utils.js';
 
 // Configuración del modelo de IA
 const MODEL = process.env.MODEL_NAME || 'gpt-3.5-turbo';
