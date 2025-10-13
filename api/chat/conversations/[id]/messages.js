@@ -9,7 +9,7 @@ import {
 } from '../../../_utils.js';
 
 // Configuración del modelo de IA
-const MODEL = process.env.MODEL_NAME || 'gpt-3.5-turbo';
+const MODEL = process.env.MODEL_NAME || 'gpt-4o-mini';
 
 /**
  * Función para obtener una respuesta del modelo de IA (OpenAI o demo)
@@ -82,19 +82,12 @@ export default allowCors(async (req, res) => {
 
     // Manejar GET: Obtener mensajes de la conversación
     if (req.method === 'GET') {
-      const messages = getMessages(conversationId);
+      const messages = getMessages(conversationId).map(m => ({ ...m, conversationId }));
       
+      // Responder en el formato ideal requerido por el frontend: data como lista
       return res.json({
         success: true,
-        data: {
-          session: {
-            id: conversation.id,
-            title: conversation.title,
-            createdAt: conversation.createdAt,
-            updatedAt: conversation.updatedAt
-          },
-          messages
-        }
+        data: messages
       });
     }
     
