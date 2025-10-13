@@ -70,15 +70,19 @@ export default allowCors(async (req, res) => {
   }
 
   try {
-    // Obtener la conversación del cliente
+    // En serverless (Vercel) no hay garantía de estado en memoria entre invocaciones.
+    // Si la conversación no existe en esta instancia, la creamos de forma mínima para continuar.
     const conversations = getClientConversations(clientId);
-    const conversation = conversations.find(c => c.id === conversationId);
-    
+    let conversation = conversations.find(c => c.id === conversationId);
     if (!conversation) {
-      return res.status(404).json({
-        success: false,
-        error: 'Conversación no encontrada para este cliente'
-      });
+      conversation = {
+        id: conversationId,
+        title: 'Conversación',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messageCount: 0
+      };
+      saveConversation(clientId, conversation);
     }
 
     // Manejar GET: Obtener mensajes de la conversación
