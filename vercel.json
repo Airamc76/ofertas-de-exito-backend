@@ -9,11 +9,11 @@
   "routes": [
     {
       "src": "/api/chat/conversations/([^/]+)/messages",
-      "dest": "/api/chat/conversations/[id]/messages.js"
+      "dest": "/api/chat/conversations/[id]/messages.js?id=$1"
     },
     {
       "src": "/api/conversations/([^/]+)/messages",
-      "dest": "/api/chat/conversations/[id]/messages.js"
+      "dest": "/api/chat/conversations/[id]/messages.js?id=$1"
     },
     {
       "src": "/api/chat/conversations",
