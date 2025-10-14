@@ -159,66 +159,128 @@ const resetCodesStore = new Map(); // key -> `alma:reset:${email}` => code
 
 const MAX_TURNS = 100; // Suficiente para ~3 meses de uso regular
 
-// Helpers para deserializar y normalizar historial legado
+// Helpers para el manejo del historial de conversación
 function tryParseJSON(val) {
   if (typeof val !== 'string') return null;
   try { return JSON.parse(val); } catch { return null; }
 }
 
+// Mejorada para mantener más metadatos
 function normalizeHistory(raw) {
-  // Aceptar string JSON o arreglo directo
   const val = typeof raw === 'string' ? (tryParseJSON(raw) ?? raw) : raw;
   if (!Array.isArray(val)) return [];
-  // Aceptar solo elementos con role y content válidos
+  
   return val
-    .filter(m => m && typeof m === 'object' && typeof m.role === 'string' && typeof m.content === 'string')
-    .map(m => ({ role: m.role, content: String(m.content) }));
+    .filter(m => m && typeof m === 'object' && 
+                 typeof m.role === 'string' && 
+                 typeof m.content === 'string' &&
+                 (m.role === 'system' || m.role === 'user' || m.role === 'assistant'))
+    .map(m => ({
+      role: m.role,
+      content: String(m.content).trim(),
+      timestamp: m.timestamp || new Date().toISOString()
+    }));
 }
 
 function isValidRole(role) {
-  return role === 'system' || role === 'user' || role === 'assistant';
+  return ['system', 'user', 'assistant'].includes(role);
 }
 
 function isValidMessage(m) {
-  return m && typeof m === 'object' && isValidRole(m.role) && typeof m.content === 'string';
+  return m && 
+         typeof m === 'object' && 
+         isValidRole(m.role) && 
+         typeof m.content === 'string' &&
+         m.content.trim().length > 0;
 }
 
 function normalizeMessagesArray(arr) {
   if (!Array.isArray(arr)) return [];
   return arr
     .filter(isValidMessage)
-    .map(m => ({ role: m.role, content: String(m.content) }));
+    .map(m => ({
+      role: m.role,
+      content: String(m.content).trim(),
+      timestamp: m.timestamp || new Date().toISOString()
+    }));
 }
 
+// Mejorada para incluir más contexto en los logs
 async function getHistory(userId, conversationId = 'default') {
-  if (!userId) return [];
+  if (!userId) {
+    console.warn('[chat] Intento de obtener historial sin userId');
+    return [];
+  }
+  
   try {
     const key = `chat:${userId}:${conversationId}`;
     const history = chatStore.get(key) || [];
-    return normalizeHistory(history);
+    const normalized = normalizeHistory(history);
+    
+    console.log(`[chat] Historial cargado para ${userId}/${conversationId}:`, {
+      mensajes: normalized.length,
+      ultimoMensaje: normalized[normalized.length - 1]?.content?.substring(0, 50) + '...',
+      totalCaracteres: normalized.reduce((acc, m) => acc + m.content.length, 0)
+    });
+    
+    return normalized;
   } catch (error) {
-    console.error('[chat] Error getting history (store):', error);
+    console.error('[chat] Error obteniendo historial:', error);
     return [];
   }
 }
 
+// Mejorada con más validaciones y logs
 async function saveTurn(userId, userMsg, assistantMsg, conversationId = 'default') {
-  if (!userId) return;
+  if (!userId) {
+    console.warn('[chat] Intento de guardar turno sin userId');
+    return;
+  }
+  
   try {
-    const hist = await getHistory(userId, conversationId);
-    if (userMsg) hist.push({ role: 'user', content: userMsg, timestamp: new Date().toISOString() });
-    if (assistantMsg) hist.push({ role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString() });
-
-    const extra = Math.max(0, hist.length - MAX_TURNS * 2);
-    if (extra) hist.splice(0, extra);
-
+    const now = new Date().toISOString();
     const key = `chat:${userId}:${conversationId}`;
+    
+    // Obtener historial actual
+    const hist = await getHistory(userId, conversationId);
+    
+    // Agregar mensajes al historial si existen
+    if (userMsg) {
+      hist.push({
+        role: 'user',
+        content: String(userMsg).trim(),
+        timestamp: now
+      });
+    }
+    
+    if (assistantMsg) {
+      hist.push({
+        role: 'assistant',
+        content: String(assistantMsg).trim(),
+        timestamp: now
+      });
+    }
+    
+    // Limitar el tamaño del historial para evitar exceder los límites de tokens
+    const MAX_HISTORY_LENGTH = 20; // Ajusta según sea necesario
+    while (hist.length > MAX_HISTORY_LENGTH * 2) {
+      // Mantener los mensajes más recientes
+      hist.shift();
+    }
+    
+    // Guardar historial actualizado
     chatStore.set(key, hist);
     
-    // Guardar lista de conversaciones del usuario
+    // Actualizar lista de conversaciones
     await saveConversationList(userId, conversationId, userMsg || assistantMsg || '');
+    
+    console.log(`[chat] Turno guardado para ${userId}/${conversationId}`, {
+      mensajesTotales: hist.length,
+      ultimoMensaje: hist[hist.length - 1]?.content?.substring(0, 50) + '...'
+    });
+    
   } catch (error) {
-    console.error('[chat] Error saving turn (store):', error);
+    console.error('[chat] Error guardando turno:', error);
   }
 }
 
@@ -363,36 +425,81 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'userId requerido (o token válido)' });
     }
 
+    // 1. Obtener historial de la conversación
     const history = await getHistory(userId, conversationId);
-
-    // Construir mensajes con el contexto completo
+    
+    // 2. Construir el contexto con la fecha actual
+    const fechaActual = new Date().toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    const systemContext = `FECHA ACTUAL: ${fechaActual}\n\n${ALMA_CONTEXT}`;
+    
+    // 3. Construir mensajes con el contexto completo
     let messages = [
-      { role: 'system', content: ALMA_CONTEXT },
-      ...history.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user', content: mensaje }
+      { 
+        role: 'system', 
+        content: systemContext,
+        timestamp: new Date().toISOString()
+      }
     ];
-
-    // Validación extra: si algún mensaje es inválido, usamos solo system + user
-    if (!messages.every(isValidMessage)) {
-      console.warn('[chat] Mensajes inválidos detectados. Rehaciendo sin historial.', { conversationId, userId });
-      messages = [
-        { role: 'system', content: ALMA_CONTEXT },
-        { role: 'user', content: mensaje }
-      ];
+    
+    // 4. Agregar historial reciente (últimos 10 intercambios)
+    const maxHistory = 10;
+    const recentHistory = history.slice(-maxHistory * 2); // *2 porque cada intercambio son 2 mensajes
+    
+    // 5. Filtrar mensajes inválidos y asegurar que no excedan el límite de tokens
+    let totalTokens = systemContext.length;
+    const MAX_TOKENS = 12000; // Aprox. 3000 tokens
+    
+    const validMessages = [];
+    for (const msg of recentHistory) {
+      if (!isValidMessage(msg)) continue;
+      
+      const msgLength = msg.content?.length || 0;
+      if (totalTokens + msgLength > MAX_TOKENS) break;
+      
+      validMessages.push({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || new Date().toISOString()
+      });
+      
+      totalTokens += msgLength;
     }
+    
+    // 6. Agregar historial válido a los mensajes
+    messages.push(...validMessages);
+    
+    // 7. Agregar el mensaje actual del usuario
+    messages.push({
+      role: 'user',
+      content: mensaje,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log('[chat] Enviando a OpenAI con:', {
+      tokens: totalTokens,
+      mensajesHistorial: validMessages.length,
+      fechaActual,
+      model: process.env.MODEL_OPENAI || 'gpt-4o-mini'
+    });
 
-    console.log('[chat] Enviando a OpenAI con contexto de', 
-      Math.round(ALMA_CONTEXT.length / 1024) + 'KB',
-      'y', history.length, 'mensajes de historial');
-
+    // 8. Llamar a la API de OpenAI
     const openaiResp = await withTimeout(
       axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
           model: process.env.MODEL_OPENAI || 'gpt-4o-mini',
-          messages,
+          messages: messages.map(({ role, content }) => ({ role, content })),
           temperature: 0.7,
-          max_tokens: 800
+          max_tokens: 1500,
+          top_p: 0.9,
+          frequency_penalty: 0.5,
+          presence_penalty: 0.5
         },
         {
           headers: {
