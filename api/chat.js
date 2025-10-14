@@ -10,54 +10,17 @@ import dotenv from 'dotenv';
 import client from '../src/middleware/client.js';
 import { conversationListStore as convStoreMem, chatStore as chatStoreMem } from '../src/store/memory.js';
 import chatRoutes from '../routes/chat-conversations.js';
+import promptManager from './prompts/prompt-manager.js';
 
 dotenv.config();
 
 const app = express();
 
-/* ==========================
-   0) Estilo Alma + Guardas
-   ========================== */
-// Función para cargar archivos de prompt de manera segura
-function loadPrompt(filename, fallback = '') {
-  try {
-    const filePath = path.join(process.cwd(), 'api', 'prompts', filename);
-    return fs.readFileSync(filePath, 'utf8');
-  } catch (e) {
-    console.warn(`[chat] No se pudo leer ${filename}. Usando fallback.`, e?.message);
-    return fallback;
-  }
-}
+// Obtener el contexto completo de los prompts
+const ALMA_CONTEXT = promptManager.getFullContext();
 
-// Cargar todos los prompts
-const ALMA_STYLE = loadPrompt('alma-style.md', 'Eres "Alma", **experta en ventas online** y ofertas irresistibles. Tu trabajo: guiar a la persona para convertir ideas en ventas digitales usando funnels, páginas de venta, anuncios, e-mail marketing y automatización. Responde en español con bloques claros, acción inmediata y tono directo/empático.');
-const ALMA_DIALOG = loadPrompt('alma-dialog.md', '');
-const ALMA_FEWSHOT = loadPrompt('alma-fewshot.md', '');
-const ALMA_OUTPUT = loadPrompt('alma-output.md', '');
-
-const GUARD = `
-## REGLAS OBLIGATORIAS:
-- Cualquier precio, descuento, fecha o cupo es "EJEMPLO" o "personalizable".
-- No fijes importes definitivos a menos que el usuario los provea explícitamente.
-- Usa micro-decisiones (CTA breve) al final de cada bloque cuando aporte claridad.
-- Mantén el tono: claro, persuasivo, sin relleno, útil para conversión.
-`;
-
-// Combinar todos los prompts en un solo bloque de contexto
-const ALMA_CONTEXT = [
-  '## CONTEXTO Y ESTILO',
-  ALMA_STYLE,
-  '\n## GUÍA DE DIÁLOGO',
-  ALMA_DIALOG,
-  '\n## EJEMPLOS DE RESPUESTA',
-  ALMA_FEWSHOT,
-  '\n## FORMATO DE SALIDA',
-  ALMA_OUTPUT,
-  '\n## REGLAS OBLIGATORIAS',
-  GUARD,
-  '\n## CONTEXTO ADICIONAL',
-  'Responde siempre en español. Usa emojis relevantes para hacer la conversación más amigable.'
-].join('\n\n');
+// Log del tamaño del contexto para depuración
+console.log(`[chat] Contexto de Alma cargado (${ALMA_CONTEXT.length} caracteres)`);
 
 /* ==========================
    1) Config & Middlewares
