@@ -22,4 +22,15 @@ if (supaRouter) app.use('/api/supax', supaRouter);
 // Healthcheck
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Manejador global de errores (diagnóstico)
+app.use((err, req, res, next) => {
+  try {
+    console.error('[global-error]', { path: req.url, message: err?.message, stack: err?.stack });
+  } catch {}
+  if (err?.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({ success: false, route: 'global-error', reason: 'invalid_json', message: err.message });
+  }
+  res.status(500).json({ success: false, route: 'global-error', message: err?.message || 'internal_error' });
+});
+
 export default app;
