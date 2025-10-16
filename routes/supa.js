@@ -2,11 +2,19 @@
 import { Router } from 'express';
 import { customAlphabet } from 'nanoid';
 import { supaStore, supa } from '../src/store/supaStore.js';
-import { loadPrompts } from '../src/prompts/loadPrompts.js';
 import { callModel } from '../src/services/ai.js';
 
 const router = Router();
 const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 20);
+
+// === HOTFIX PROMPTS INLINE (no FS) ===
+const P = {
+  style:  process.env.PROMPT_STYLE  || 'Eres Alma, una asistente clara, amable y accionable.',
+  dialog: process.env.PROMPT_DIALOG || 'Mantén el contexto; pide datos faltantes sin ambigüedad.',
+  output: process.env.PROMPT_OUTPUT || 'Responde con pasos y ejemplos breves. Evita jerga innecesaria y usa bloques de código cuando aplique.',
+  fewshot: process.env.PROMPT_FEWSHOT || null,
+};
+// =====================================
 
 // Retry exponencial simple para llamadas a proveedor
 async function callWithRetry(fn, tries = 3) {
