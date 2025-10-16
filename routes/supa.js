@@ -1,4 +1,5 @@
 // routes/supa.js - Rutas persistentes con Supabase (scoping por x-client-id)
+console.log('[SupaRouter] loaded from', import.meta.url);
 import { Router } from 'express';
 import { customAlphabet } from 'nanoid';
 import { supaStore, supa } from '../src/store/supaStore.js';
