@@ -11,6 +11,7 @@ import client from '../src/middleware/client.js';
 import { conversationListStore as convStoreMem, chatStore as chatStoreMem } from '../src/store/memory.js';
 import chatRoutes from '../routes/chat-conversations.js';
 import promptManager from './prompts/prompt-manager.js';
+import supaRouter from '../routes/supa.js';
 
 dotenv.config();
 
@@ -90,6 +91,9 @@ app.post('*', (req, res, next) => {
 // GET/POST /api/conversations
 // Montar nuevas rutas de chat sin login (memoria + x-client-id)
 app.use('/api/chat', chatRoutes);
+
+// Nuevas rutas persistentes con Supabase (scoping por x-client-id)
+app.use('/api/supa', supaRouter);
 
 
 // GET/POST/DELETE /api/conversations/:id/messages
