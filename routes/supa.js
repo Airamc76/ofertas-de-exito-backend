@@ -135,7 +135,13 @@ router.post('/conversations/:id/messages', async (req, res) => {
     }
 
     // 3) Request ganador: construir prompts + historial recortado
-    const P = loadPrompts();
+    // HOTFIX: prompts inline (evita ENOENT de fs en producción)
+    const P = {
+      style:  process.env.PROMPT_STYLE  || 'Eres Alma, una asistente clara, amable y accionable.',
+      dialog: process.env.PROMPT_DIALOG || 'Mantén el contexto; pide datos faltantes sin ambigüedad.',
+      output: process.env.PROMPT_OUTPUT || 'Responde con pasos y ejemplos breves. Evita jerga innecesaria y usa bloques de código cuando aplique.',
+      fewshot: process.env.PROMPT_FEWSHOT || null,
+    };
     const fullHistory = await supaStore.getHistory(id, 60);
 
     const MAX_CHARS = 16000;
