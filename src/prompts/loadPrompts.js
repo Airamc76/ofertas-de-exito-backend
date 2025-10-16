@@ -1,37 +1,29 @@
-// src/prompts/loadPrompts.js (ENV -> archivos -> defaults)
-import { readFileSync, existsSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// src/prompts/loadPrompts.js (ENV -> inline defaults)
+import { STYLE_DEFAULT, DIALOG_DEFAULT, OUTPUT_DEFAULT, FEWSHOT_DEFAULT } from './texts.js';
 
 let cache = null;
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const DIRS = [
-  path.join(process.cwd(), 'src', 'prompts'),
-  path.join(process.cwd(), 'api', 'prompts'),
-  __dirname
-];
-
-function readFirst(filename) {
-  for (const d of DIRS) {
-    const p = path.join(d, filename);
-    if (existsSync(p)) {
-      try { return readFileSync(p, 'utf8'); } catch {}
-    }
-  }
-  return null;
-}
+const envOr = (key, fallback) => {
+  const v = process.env[key];
+  return (typeof v === 'string' && v.trim().length) ? v.trim() : fallback;
+};
 
 export function loadPrompts() {
   if (cache) return cache;
-  const env = (k) => process.env[k]?.trim?.();
-  cache = {
-    style:   env('PROMPT_STYLE')   || readFirst('alma-style.md')   || 'Eres Alma, una asistente clara y útil.',
-    dialog:  env('PROMPT_DIALOG')  || readFirst('alma-dialog.md')  || 'Mantén el contexto y solicita datos faltantes.',
-    output:  env('PROMPT_OUTPUT')  || readFirst('alma-output.md')  || 'Responde con pasos concretos y ejemplos.',
-    fewshot: env('PROMPT_FEWSHOT') || readFirst('alma-fewshot.md') || null
-  };
+  const style   = envOr('PROMPT_STYLE',   STYLE_DEFAULT);
+  const dialog  = envOr('PROMPT_DIALOG',  DIALOG_DEFAULT);
+  const output  = envOr('PROMPT_OUTPUT',  OUTPUT_DEFAULT);
+  const fewshot = envOr('PROMPT_FEWSHOT', FEWSHOT_DEFAULT);
+
+  try {
+    console.log('[prompts] sources', {
+      style:   style === STYLE_DEFAULT   ? 'inline' : 'env',
+      dialog:  dialog === DIALOG_DEFAULT ? 'inline' : 'env',
+      output:  output === OUTPUT_DEFAULT ? 'inline' : 'env',
+      fewshot: fewshot === FEWSHOT_DEFAULT ? 'inline' : (fewshot ? 'env' : 'none'),
+    });
+  } catch {}
+
+  cache = { style, dialog, output, fewshot };
   return cache;
 }
