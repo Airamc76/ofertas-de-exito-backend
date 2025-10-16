@@ -1,25 +1,14 @@
-// src/prompts/loadPrompts.js
-import fs from 'node:fs';
-import path from 'node:path';
-
+// src/prompts/loadPrompts.js (ENV-first)
 let cache = null;
+
 export function loadPrompts() {
   if (cache) return cache;
-
-  const tryBase = (parts) => path.join(process.cwd(), ...parts);
-  const srcBase = tryBase(['src', 'prompts']);
-  const apiBase = tryBase(['api', 'prompts']);
-
-  const base = fs.existsSync(srcBase) ? srcBase : apiBase;
-  const read = (f) => fs.readFileSync(path.join(base, f), 'utf8');
-
+  const env = (k, fallback) => (process.env[k]?.trim?.() || fallback);
   cache = {
-    style:   read('alma-style.md'),
-    dialog:  read('alma-dialog.md'),
-    output:  read('alma-output.md'),
-    fewshot: fs.existsSync(path.join(base, 'alma-fewshot.md'))
-      ? read('alma-fewshot.md')
-      : null,
+    style:   env('PROMPT_STYLE',   'Eres Alma, una asistente clara, amable y accionable.'),
+    dialog:  env('PROMPT_DIALOG',  'Mantén el contexto; pide datos faltantes sin ambigüedad.'),
+    output:  env('PROMPT_OUTPUT',  'Responde con pasos y ejemplos. Evita jerga innecesaria.'),
+    fewshot: env('PROMPT_FEWSHOT', null)
   };
   return cache;
 }
