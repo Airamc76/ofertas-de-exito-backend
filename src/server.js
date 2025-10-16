@@ -18,6 +18,9 @@ if (chatRouter) app.use('/api/chat', chatRouter);
 if (conversationsRouter) app.use('/api/conversations', conversationsRouter);
 if (supaRouter) app.use('/api/supa', supaRouter);
 
+// Prefijo alternativo temporal para diagnóstico
+if (supaRouter) app.use('/api/supax', supaRouter);
+
 // Healthcheck
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
