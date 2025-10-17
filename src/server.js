@@ -16,6 +16,19 @@ app.use(express.json({ limit: '1mb' }));
 if (chatRouter) app.use('/api/chat', chatRouter);
 if (supaRouter) app.use('/api/supa', supaRouter);
 
+// Compat: rutas antiguas -> nuevas supax
+app.post('/api/conversations/:id/messages', (req, res, next) => {
+  req.url = `/conversations/${req.params.id}/messages`;
+  req.originalUrl = `/api/supax${req.url}`;
+  app._router.handle(req, res, next);
+});
+
+app.get('/api/conversations/:id/history', (req, res, next) => {
+  req.url = `/conversations/${req.params.id}/history${req._parsedUrl?.search || ''}`;
+  req.originalUrl = `/api/supax${req.url}`;
+  app._router.handle(req, res, next);
+});
+
 // Prefijo alternativo temporal para diagnóstico
 if (supaRouter) app.use('/api/supax', supaRouter);
 
