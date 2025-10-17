@@ -97,6 +97,9 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     const startedAt = Date.now();
 
+    // Auto-creación de conversación para IDs legacy si no existe
+    await supaStore.ensureConversation(id, clientId);
+
     // 1) UPSERT del mensaje user con client_msg_id (idempotencia DB)
     let userRow = null;
     try {

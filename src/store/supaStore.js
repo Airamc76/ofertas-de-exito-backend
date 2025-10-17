@@ -20,6 +20,15 @@ export const supaStore = {
     return { id: convId, title };
   },
 
+  async ensureConversation(id, clientId, title = 'Nueva conversación') {
+    await this.ensureClient(clientId);
+    const { error } = await supa
+      .from('conversations')
+      .upsert({ id, client_id: clientId, title }, { onConflict: 'id' });
+    if (error) throw error;
+    return { id, title };
+  },
+
   async listConversations(clientId, limit = 20) {
     const { data, error } = await supa.from('conversations')
       .select('id, title, created_at')
