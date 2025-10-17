@@ -16,17 +16,18 @@ app.use(express.json({ limit: '1mb' }));
 if (chatRouter) app.use('/api/chat', chatRouter);
 if (supaRouter) app.use('/api/supa', supaRouter);
 
-// Compat: rutas antiguas -> nuevas supax
-app.post('/api/conversations/:id/messages', (req, res, next) => {
-  req.url = `/conversations/${req.params.id}/messages`;
-  req.originalUrl = `/api/supax${req.url}`;
-  app._router.handle(req, res, next);
+// --- Compatibilidad con rutas antiguas del front ---
+// POST /api/conversations/:id/messages  -> 307 -> /api/supax/conversations/:id/messages
+app.all('/api/conversations/:id/messages', (req, res) => {
+  res.set('X-Legacy-Route', '1');
+  res.redirect(307, `/api/supax/conversations/${encodeURIComponent(req.params.id)}/messages`);
 });
 
-app.get('/api/conversations/:id/history', (req, res, next) => {
-  req.url = `/conversations/${req.params.id}/history${req._parsedUrl?.search || ''}`;
-  req.originalUrl = `/api/supax${req.url}`;
-  app._router.handle(req, res, next);
+// GET /api/conversations/:id/history  -> 307 -> /api/supax/conversations/:id/history?...
+app.get('/api/conversations/:id/history', (req, res) => {
+  res.set('X-Legacy-Route', '1');
+  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/supax/conversations/${encodeURIComponent(req.params.id)}/history${qs}`);
 });
 
 // Prefijo alternativo temporal para diagnóstico
