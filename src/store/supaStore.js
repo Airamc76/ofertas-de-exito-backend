@@ -45,14 +45,64 @@ export const supaStore = {
     if (error) throw error;
   },
 
-  async getHistory(conversationId, limit = 24) {
+  async getHistory(conversationId, limit = 40) {
     const { data, error } = await supa
       .from('messages')
       .select('role, content, created_at')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: true })
       .limit(limit);
     if (error) throw error;
-    return (data || []).reverse();
+    return data || [];
   },
 };
+
+// --- Helpers/export nombrados ---
+export async function ensureConversation(id, clientId, title = 'Nueva conversación') {
+  return supaStore.ensureConversation(id, clientId, title);
+}
+
+export async function getHistory(conversationId, limit = 40) {
+  return supaStore.getHistory(conversationId, limit);
+}
+
+export async function appendMessage(conversationId, role, content, extra = {}) {
+  return supaStore.appendMessage(conversationId, role, content, extra);
+}
+
+// Guarda el USER con idempotencia por (conversation_id, client_msg_id)
+export async function saveUserMessageIdempotent(conversationId, content, clientMsgId) {
+  const { data, error } = await supa
+    .from('messages')
+    .upsert(
+      [{ conversation_id: conversationId, role: 'user', content, client_msg_id: clientMsgId }],
+      { onConflict: 'conversation_id,client_msg_id' }
+    )
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    const check = await supa
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('role', 'user')
+      .eq('client_msg_id', clientMsgId)
+      .maybeSingle();
+    if (!check.data) {
+      await supa
+        .from('messages')
+        .insert([{ conversation_id: conversationId, role: 'user', content, client_msg_id: clientMsgId }]);
+    }
+  }
+}
+
+export async function saveAssistantMessage(conversationId, content, clientMsgId) {
+  const { error } = await supa
+    .from('messages')
+    .insert([{ conversation_id: conversationId, role: 'assistant', content /*, reply_to_client_msg_id: clientMsgId */ }]);
+  if (error) throw error;
+}

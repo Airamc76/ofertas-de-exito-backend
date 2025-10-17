@@ -85,130 +85,79 @@ router.post('/conversations', async (req, res) => {
 
 // Enviar mensaje y obtener respuesta del modelo
 router.post('/conversations/:id/messages', async (req, res) => {
+  const startedAt = Date.now();
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Hit', 'supa:messages');
+
   try {
     const clientId = req.headers['x-client-id'];
-    res.setHeader('x-hit', 'supa:messages');
-    if (!clientId) return res.status(400).json({ success: false, route: 'supa:messages', error: 'Se requiere el encabezado x-client-id' });
+    if (!clientId) return res.status(400).json({ success: false, route: 'supa:messages', error: 'Missing x-client-id' });
 
     const id = req.params.id;
     const content = (req.body?.content || '').trim();
     const clientMsgId = req.body?.clientMsgId || null;
-    if (!content) return res.status(400).json({ success: false, error: 'content requerido' });
+    if (!content || !clientMsgId) {
+      return res.status(400).json({ success: false, route: 'supa:messages', error: 'content y clientMsgId requeridos' });
+    }
 
-    const startedAt = Date.now();
-
-    // Auto-creación de conversación para IDs legacy si no existe
+    // 1) Asegura conversación (ids legacy)
     await supaStore.ensureConversation(id, clientId);
 
-    // 1) UPSERT del mensaje user con client_msg_id (idempotencia DB)
-    let userRow = null;
-    try {
-      const upsertPayload = [{ conversation_id: id, role: 'user', content, client_msg_id: clientMsgId }];
-      const { data: upserted, error: upErr } = await supa
+    // 2) UPSERT del user con idempotencia (conversation_id + client_msg_id) con verificación y fallback
+    const upsertRes = await supa
+      .from('messages')
+      .upsert(
+        [{ conversation_id: id, role: 'user', content, client_msg_id: clientMsgId }],
+        { onConflict: 'conversation_id,client_msg_id' }
+      )
+      .select('id, role, client_msg_id')
+      .maybeSingle();
+
+    if (upsertRes.error) {
+      try { console.error('[supa] upsert user error:', upsertRes.error); } catch {}
+    }
+
+    if (!upsertRes.data) {
+      const check = await supa
         .from('messages')
-        .upsert(upsertPayload, { onConflict: 'conversation_id,client_msg_id', ignoreDuplicates: true })
-        .select('id, created_at')
-        .maybeSingle();
-      if (upErr) throw upErr;
-      userRow = upserted || null;
-    } catch (e) {
-      // Si falla por índice, el mensaje del user puede existir; se intenta recuperar
-      const { data: existingUser, error: getUserErr } = await supa
-        .from('messages')
-        .select('id, created_at')
+        .select('id')
         .eq('conversation_id', id)
         .eq('role', 'user')
         .eq('client_msg_id', clientMsgId)
         .maybeSingle();
-      if (getUserErr) throw getUserErr;
-      userRow = existingUser || null;
-    }
 
-    // 2) Si existía ya, intentar devolver la respuesta assistant que lo sigue (dedupe)
-    if (userRow && clientMsgId) {
-      for (let i = 0; i < 6; i++) { // ~2.1s
-        const { data: reply, error: repErr } = await supa
-          .from('messages')
-          .select('content, created_at')
-          .eq('conversation_id', id)
-          .eq('role', 'assistant')
-          .gt('created_at', userRow.created_at)
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (repErr) throw repErr;
-        if (reply?.content) {
-          try { console.log('[supa] dedup hit', { id, clientMsgId, ms: Date.now() - startedAt }); } catch {}
-          return res.status(200).json({ success: true, route: 'supa:messages', data: { content: reply.content }, dedup: true });
-        }
-        await sleep(350);
+      if (!check.data) {
+        try { console.warn('[supa] user not found after upsert, fallback insert'); } catch {}
+        await supaStore.appendMessage(id, 'user', content, { client_msg_id: clientMsgId });
       }
-      return res.status(202).json({ success: true, route: 'supa:messages', pending: true });
     }
 
-    // 3) Request ganador: construir prompts + historial recortado
-    // HOTFIX: prompts inline (evita ENOENT de fs en producción)
-    const P = {
-      style:  process.env.PROMPT_STYLE  || 'Eres Alma, una asistente clara, amable y accionable.',
-      dialog: process.env.PROMPT_DIALOG || 'Mantén el contexto; pide datos faltantes sin ambigüedad.',
-      output: process.env.PROMPT_OUTPUT || 'Responde con pasos y ejemplos breves. Evita jerga innecesaria y usa bloques de código cuando aplique.',
-      fewshot: process.env.PROMPT_FEWSHOT || null,
-    };
-    const fullHistory = await supaStore.getHistory(id, 60);
+    // 3) Traer historial ya con el user incluido
+    const history = await supaStore.getHistory(id, 40);
 
-    const MAX_CHARS = 16000;
-    const sys = [{ role: 'system', content: `${P.style}\n\n${P.dialog}\n\n${P.output}` }];
-    const few = P.fewshot ? [{ role: 'system', content: P.fewshot }] : [];
+    // 4) Componer prompts anti-saludo
+    const SYS = 'Eres Alma, una asistente de negocio práctica. Respondes en español, directo y accionable. '
+      + 'No saludes ni digas “Estoy aquí para ayudarte”. Evita frases de relleno. '
+      + 'Da pasos concretos, bullets y ejemplos breves. Si falta un dato clave, haz 1–2 preguntas cortas.';
+    const OUTPUT = 'Formato: • Bullets cortas o pasos numerados • Enlazar con lo ya dicho • Nada de párrafos largos • Máximo 8 bullets.';
 
-    let used = 0;
-    const body = [];
-    for (let i = fullHistory.length - 1; i >= 0; i--) {
-      const m = fullHistory[i];
-      const size = (m.content?.length || 0);
-      if (used + size > MAX_CHARS && body.length > 0) break;
-      used += size;
-      body.unshift({ role: m.role, content: m.content });
-    }
-    const messages = [...sys, ...few, ...body];
+    const messages = [
+      { role: 'system', content: `${SYS}\n${OUTPUT}` },
+      ...history.map(m => ({ role: m.role, content: m.content })),
+    ];
 
-    // 4) Inferencia con retry
+    // 5) Llamar al modelo con retry
     const t0 = Date.now();
     const { text } = await callWithRetry(() => callModel({ messages }), 3);
     const inferMs = Date.now() - t0;
     try { console.log('[supa] infer', { messages: messages.length, ms: inferMs }); } catch {}
 
-    // 5) Guardar respuesta assistant una sola vez
+    // 6) Guardar assistant
     await supaStore.appendMessage(id, 'assistant', text);
-
-    // 6) Actualizar título automáticamente si está genérico
-    try {
-      const { data: convMeta } = await supa
-        .from('conversations')
-        .select('title')
-        .eq('id', id)
-        .single();
-      const currentTitle = convMeta?.title || '';
-      const isGeneric = !currentTitle || /^\s*Nueva conversación\s*$/i.test(currentTitle);
-      if (isGeneric) {
-        const { text: title } = await callModel({
-          messages: [
-            { role: 'system', content: 'Resume el tema de la conversación en máximo 6 palabras, sin comillas.' },
-            { role: 'user', content }
-          ]
-        });
-        const newTitle = (title || '').trim().slice(0, 60);
-        if (newTitle) {
-          await supa.from('conversations').update({ title: newTitle }).eq('id', id);
-        }
-      }
-    } catch (e) {
-      try { console.warn('[supa] title auto-update skipped:', e?.message || e); } catch {}
-    }
 
     return res.status(201).json({ success: true, route: 'supa:messages', data: { content: text } });
   } catch (e) {
-    console.error('[supa] send message error:', e);
-    res.setHeader('x-hit', 'supa:messages');
+    console.error('supa:messages error', e);
     return res.status(500).json({ success: false, route: 'supa:messages', error: String(e?.message || e) });
   }
 });
