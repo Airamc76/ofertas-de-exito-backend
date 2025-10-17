@@ -106,3 +106,21 @@ export async function saveAssistantMessage(conversationId, content, clientMsgId)
     .insert([{ conversation_id: conversationId, role: 'assistant', content /*, reply_to_client_msg_id: clientMsgId */ }]);
   if (error) throw error;
 }
+
+export async function updateConversationTitle(conversationId, title) {
+  const { error } = await supa
+    .from('conversations')
+    .update({ title, updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+  if (error) throw error;
+}
+
+export async function getConversation(conversationId) {
+  const { data, error } = await supa
+    .from('conversations')
+    .select('id,title,created_at')
+    .eq('id', conversationId)
+    .single();
+  if (error) throw error;
+  return data;
+}

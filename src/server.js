@@ -14,6 +14,9 @@ app.use(express.json({ limit: '1mb' }));
 
 // Montaje unificado bajo /api/*
 if (chatRouter) app.use('/api/chat', chatRouter);
+// Alias principal nuevo: expone rutas de supaRouter directamente bajo /api
+if (supaRouter) app.use('/api', supaRouter); // ahora /api/ping, /api/conversations, etc.
+// Alias anterior conservado
 if (supaRouter) app.use('/api/supa', supaRouter);
 
 // --- Compatibilidad con rutas antiguas del front ---

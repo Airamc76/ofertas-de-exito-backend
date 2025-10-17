@@ -1,8 +1,9 @@
 // routes/supa.js - Rutas persistentes con Supabase (scoping por x-client-id)
 console.log('[SupaRouter] loaded from', import.meta.url);
 import { Router } from 'express';
+import fs from 'node:fs/promises';
 import { customAlphabet } from 'nanoid';
-import { supaStore, supa } from '../src/store/supaStore.js';
+import { supaStore, supa, getConversation, updateConversationTitle } from '../src/store/supaStore.js';
 import { callModel } from '../src/services/ai.js';
 
 const router = Router();
@@ -78,6 +79,29 @@ async function callWithRetry(fn, tries = 3) {
 
 // Pequeño helper
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Carga de prompts desde FS con fallback inline
+async function loadSystemFromFiles() {
+  try {
+    const read = (p) => fs.readFile(new URL(p, import.meta.url), 'utf8');
+    const [STYLE, OUTPUT, DIALOG, FEWSHOT] = await Promise.all([
+      read('../src/prompts/alma-style.md'),
+      read('../src/prompts/alma-output.md'),
+      read('../src/prompts/alma-dialog.md'),
+      read('../src/prompts/alma-fewshot.md').catch(() => '')
+    ]);
+    const SYSTEM = [
+      '## STYLE\n' + STYLE.trim(),
+      '\n\n## OUTPUT\n' + OUTPUT.trim(),
+      '\n\n## DIALOG\n' + DIALOG.trim(),
+      FEWSHOT ? '\n\n## FEWSHOT\n' + FEWSHOT.trim() : ''
+    ].join('\n');
+    return SYSTEM;
+  } catch (_) {
+    // Fallback al inline P existente
+    return `${P.style}\n\n${P.dialog}\n\n${P.output}`;
+  }
+}
 
 // Loguea qué ruta está entrando realmente
 router.use((req, _res, next) => {
@@ -178,17 +202,28 @@ router.post('/conversations/:id/messages', async (req, res) => {
       }
     }
 
+    // 2b) Derivar título si es el primer mensaje / título por defecto
+    try {
+      const conv = await getConversation(id);
+      const isDefault = !conv?.title || /^\s*nueva conversación/i.test(conv.title.trim());
+      if (isDefault && typeof content === 'string' && content.trim().length) {
+        const words = content.trim().split(/\s+/).slice(0, 8);
+        let title = words.join(' ');
+        if (title.length > 60) title = title.slice(0, 60).trimEnd() + '…';
+        title = title.charAt(0).toUpperCase() + title.slice(1);
+        await updateConversationTitle(id, title);
+      }
+    } catch (e) {
+      try { console.warn('[title-derive] no crítico:', e?.message || e); } catch {}
+    }
+
     // 3) Traer historial ya con el user incluido
     const history = await supaStore.getHistory(id, 40);
 
-    // 4) Componer prompts anti-saludo
-    const SYS = 'Eres Alma, una asistente de negocio práctica. Respondes en español, directo y accionable. '
-      + 'No saludes ni digas “Estoy aquí para ayudarte”. Evita frases de relleno. '
-      + 'Da pasos concretos, bullets y ejemplos breves. Si falta un dato clave, haz 1–2 preguntas cortas.';
-    const OUTPUT = 'Formato: • Bullets cortas o pasos numerados • Enlazar con lo ya dicho • Nada de párrafos largos • Máximo 8 bullets.';
-
+    // 4) Construir SYSTEM desde archivos (fallback inline)
+    const SYSTEM = await loadSystemFromFiles();
     const messages = [
-      { role: 'system', content: `${SYS}\n${OUTPUT}` },
+      { role: 'system', content: SYSTEM },
       ...history.map(m => ({ role: m.role, content: m.content })),
     ];
 
