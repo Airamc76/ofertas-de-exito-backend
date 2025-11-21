@@ -4,43 +4,27 @@ import { Router } from 'express';
 import { customAlphabet } from 'nanoid';
 import { supaStore, supa, getConversation, updateConversationTitle } from '../src/store/supaStore.js';
 import { callModel } from '../src/services/ai.js';
+import promptManager from '../api/prompts/prompt-manager.js';
 
 const router = Router();
 const nanoid = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 20);
 
-// --- Alma generalista (inline, sin seeds comerciales) ---
-const SYS = `
-Eres "Alma", un asistente de IA claro y pragmático.
-Slogan: "Ambición, Liderazgo, Motivo y Acción para tu futuro".
+// Preflight específico por si el proveedor enruta raro
+router.options('/conversations/:id/messages', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
+  return res.status(204).end();
+});
 
-Objetivo:
-- Entender rápidamente qué necesita la persona y llevarla a la siguiente acción útil.
-- Responder con claridad, pasos accionables y ejemplos cuando aporten.
-- Adoptar el vocabulario del usuario (tú/usted según el usuario).
-- No inventar. Si falta contexto, pide 1 o 2 datos clave, nunca un cuestionario largo.
-- Mantener el hilo de la conversación: recuerda breve contexto anterior de esta conversación.
+// --- Alma especializada en ofertas de éxito (usa prompts .md) ---
+// Reutilizamos el mismo contexto completo que api/chat.js (alma-style, alma-dialog, alma-fewshot, alma-output)
+const ALMA_CONTEXT = promptManager.getFullContext();
 
-Estilo:
-- Frases cortas, viñetas cuando ayuden, sin paja.
-- Cierra con una micro-pregunta útil para avanzar (“¿Te sirve?”, “¿Quieres que lo convierta en checklist?”, etc.).
-- Si el tema es amplio, ofrece caminos (“¿Quieres que lo resuma, lo convierta en un plan, o te doy un prompt listo?”).
-`;
-
-const STYLE = `
-Formato de salida preferido:
-- Breve introducción (1 línea máx) solo si hace falta.
-- Cuerpo: viñetas/steps concisos, sub-títulos si el contenido es largo.
-- Cierre: micro-pregunta de avance.
-
-Prohibido:
-- Asumir que el usuario quiere “vender cursos” salvo que él lo diga.
-- Responder con bloques enormes sin respiración.
-`;
-
-const FEWSHOTS = [
-  { role: 'user', content: 'necesito ideas para lanzar un producto' },
-  { role: 'assistant', content: 'Aquí tienes 4 enfoques rápidos… (viñetas cortas) ¿Quieres que lo convierta en checklist?' },
-];
+const ALMA_GREETING = [
+  '¡Hola! Soy **Alma** — tu asistente para crear **ofertas irresistibles** y estrategias de ventas online.',
+  'Cuéntame rápido qué quieres vender y a quién, y armamos algo juntos.'
+].join(' ');
 
 // Retry exponencial simple para llamadas a proveedor
 async function callWithRetry(fn, tries = 3) {
@@ -58,9 +42,16 @@ async function callWithRetry(fn, tries = 3) {
 // Pequeño helper
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Sin lectura de FS: usamos SYS/STYLE generalistas inline
+// Construir contexto de sistema usando el contexto completo + fecha actual
 function buildSystem() {
-  return `${SYS}\n\n${STYLE}`;
+  const fechaActual = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  return `FECHA ACTUAL: ${fechaActual}\n\n${ALMA_CONTEXT}`;
 }
 
 // Loguea qué ruta está entrando realmente
@@ -105,6 +96,17 @@ router.post('/conversations', async (req, res) => {
     if (!clientId) return res.status(400).json({ success: false, route: 'supa:create', error: 'Se requiere el encabezado x-client-id' });
     const convId = 'conv_' + nanoid();
     const conv = await supaStore.createConversation(clientId, convId, 'Nueva conversación');
+
+    // Sembrar saludo inicial si no hay mensajes
+    try {
+      const history = await supaStore.getHistory(convId, 1);
+      if (!history || history.length === 0) {
+        await supaStore.appendMessage(convId, 'assistant', ALMA_GREETING);
+      }
+    } catch (seedErr) {
+      try { console.warn('[supa:create] seed greeting skipped:', seedErr?.message || seedErr); } catch {}
+    }
+
     res.status(201).json({ success: true, route: 'supa:create', data: conv });
   } catch (e) {
     console.error('[supa] create conversation error:', e);
@@ -180,11 +182,10 @@ router.post('/conversations/:id/messages', async (req, res) => {
     // 3) Traer historial ya con el user incluido
     const history = await supaStore.getHistory(id, 40);
 
-    // 4) Construir SYSTEM generalista y FEWSHOTS neutrales
+    // 4) Construir SYSTEM con el contexto completo de Alma + historial
     const SYSTEM = buildSystem();
     const messages = [
       { role: 'system', content: SYSTEM },
-      ...FEWSHOTS,
       ...history.map(m => ({ role: m.role, content: m.content })),
     ];
 
@@ -216,6 +217,33 @@ router.get('/conversations/:id/history', async (req, res) => {
   } catch (e) {
     res.setHeader('x-hit', 'supa:history');
     res.status(500).json({ success: false, route: 'supa:history', error: String(e?.message || e) });
+  }
+});
+
+// Limpia todos los mensajes de una conversación (idempotente)
+router.delete('/conversations/:id/messages', async (req, res) => {
+  const clientId = req.headers['x-client-id'];
+  if (!clientId) return res.status(400).json({ success: false, error: 'Se requiere el encabezado x-client-id' });
+
+  const { id } = req.params;
+  try {
+    const { error } = await supa
+      .from('messages')
+      .delete()
+      .eq('conversation_id', id);
+
+    if (error) {
+      console.error('[supa:clear] error', { id, error });
+      res.set('x-hit', 'supa:clear');
+      return res.status(500).json({ success: false, route: 'supa:clear', error: error.message });
+    }
+
+    res.set('x-hit', 'supa:clear');
+    return res.status(200).json({ success: true, route: 'supa:clear' });
+  } catch (e) {
+    console.error('[supa:clear] exception', e);
+    res.set('x-hit', 'supa:clear');
+    return res.status(500).json({ success: false, route: 'supa:clear', error: e.message });
   }
 });
 

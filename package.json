@@ -6,6 +6,7 @@
   "engines": { "node": ">=18 <23" },
   "scripts": {
     "dev": "vercel dev",
+    "dev:local": "node local-server.js",
     "start": "vercel dev",
     "deploy": "vercel --prod"
   },

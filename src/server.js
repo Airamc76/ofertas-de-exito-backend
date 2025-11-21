@@ -9,6 +9,17 @@ import supaRouter from '../routes/supa.js';
 const app = express();
 
 // Middlewares globales
+// CORS global y preflight para TODAS las rutas
+app.all('*', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
+  // res.setHeader('Access-Control-Allow-Credentials', 'true'); // si usas cookies
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
