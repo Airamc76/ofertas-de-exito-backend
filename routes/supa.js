@@ -22,8 +22,8 @@ router.options('/conversations/:id/messages', (req, res) => {
 const ALMA_CONTEXT = promptManager.getFullContext();
 
 const ALMA_GREETING = [
-  '¡Hola! Soy **Alma** — tu asistente para crear **ofertas irresistibles** y estrategias de ventas online.',
-  'Cuéntame rápido qué quieres vender y a quién, y armamos algo juntos.'
+  'Hola, soy **Alma**, tu asistente para diseñar **ofertas irresistibles** y mensajes de venta claros.',
+  'Dime en una frase qué quieres vender, a quién y por qué ahora, y te ayudo a convertirlo en una estructura lista para vender online.'
 ].join(' ');
 
 // Retry exponencial simple para llamadas a proveedor
