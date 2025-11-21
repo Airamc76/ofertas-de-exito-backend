@@ -10,8 +10,8 @@ const app = express();
 
 // Middlewares globales
 // CORS global y preflight para TODAS las rutas
-// En Express 5, usar '/*' en lugar de '*' para evitar errores de path-to-regexp
-app.all('/*', (req, res, next) => {
+// En Express 5 evitamos patrones tipo '*' y usamos un middleware sin path
+app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-client-id, Authorization');
