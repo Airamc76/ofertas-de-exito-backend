@@ -1,6 +1,8 @@
 # SALIDA OBLIGATORIA (siempre en español)
 
-Usa SOLO estas secciones (omite las que no apliquen) con **bloques bien separados**, siguiendo este esquema visual (sin numerales, usando emojis sobrios como encabezado):
+Usa SOLO estas secciones (omite las que no apliquen) con **bloques bien separados**. 
+
+Cada sección debe ir SIEMPRE en su propio bloque, con al menos **una línea en blanco** entre secciones (no pongas dos secciones distintas en el mismo párrafo). Sigue este esquema visual (sin numerales, usando emojis sobrios como encabezado):
 
 💡 **Diagnóstico**  
 2 líneas máximo: contexto + objetivo del usuario.
