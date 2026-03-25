@@ -125,6 +125,9 @@ App.api = {
       mode: 'cors',
     });
     if (!res.ok){
+      if (res.status === 403 || res.status === 404) {
+        try { localStorage.removeItem(window.__ALMA_KEYS__.CONV); App.state.conversationId = null; } catch(e){}
+      }
       const txt = await res.text().catch(()=> '');
       throw new Error(`HTTP ${res.status} ${res.statusText} :: ${txt.slice(0,200)}`);
     }
@@ -169,7 +172,12 @@ App.api = {
       method: 'GET',
       headers: this.clientHeaders(),
     });
-    if (!r.ok) throw new Error('history failed');
+    if (!r.ok) {
+      if (r.status === 403 || r.status === 404) {
+        try { localStorage.removeItem(window.__ALMA_KEYS__.CONV); App.state.conversationId = null; } catch(e){}
+      }
+      throw new Error('history failed');
+    }
     const j = await r.json();
     return j?.data || [];
   },
