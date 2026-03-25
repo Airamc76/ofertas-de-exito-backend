@@ -112,7 +112,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
     client_msg_id
   };
 
-  const { error: insertError } = await supabase.from('messages').upsert(userMsg, { onConflict: 'client_msg_id' });
+  const { error: insertError } = await supabase.from('messages').insert(userMsg);
   if (insertError) return res.status(500).json({ error: insertError.message });
 
   // 2. Obtener historial para la IA
