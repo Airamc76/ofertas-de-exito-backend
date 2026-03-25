@@ -33,7 +33,7 @@ router.get('/conversations', async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json({ data });
 });
 
 // Crear una conversación y mensaje inicial de Alma
@@ -59,7 +59,7 @@ router.post('/conversations', async (req, res) => {
   const { error: msgError } = await supabase.from('messages').insert(initMsg);
   if (msgError) console.error("Error sembrando mensaje inicial:", msgError);
 
-  res.json(convData);
+  res.json({ data: convData });
 });
 
 // Obtener historial de una conversación
@@ -77,7 +77,7 @@ router.get('/conversations/:id/history', async (req, res) => {
     .order('created_at', { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json({ data });
 });
 
 // Enviar un mensaje
@@ -136,7 +136,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
   if (aiSavedError) return res.status(500).json({ error: aiSavedError.message });
 
-  res.json(savedMsg);
+  res.json({ data: savedMsg });
 });
 
 // Eliminar conversación
