@@ -64,7 +64,7 @@ function setConversationId(id){
 
     const fallback = (
       (location.protocol === 'https:' || location.hostname.endsWith('netlify.app'))
-        ? 'https://ofertas-de-exito-backend.vercel.app/api/supax'
+        ? 'https://ofertas-de-exito-backend.onrender.com/api/supa'
         : 'http://localhost:8788/api/supax'
     );
 
@@ -77,7 +77,7 @@ function setConversationId(id){
     App.config = Object.assign({}, App.config || {}, { apiBase: API_BASE });
     window.API_BASE = API_BASE;
   }catch{
-    const API_BASE = 'https://ofertas-de-exito-backend.vercel.app/api/supax';
+    const API_BASE = 'https://ofertas-de-exito-backend.onrender.com/api/supa';
     window.apiUrl = (path = '') => API_BASE + (String(path).startsWith('/') ? path : '/' + String(path));
     App.config = Object.assign({}, App.config || {}, { apiBase: API_BASE });
     window.API_BASE = API_BASE;
