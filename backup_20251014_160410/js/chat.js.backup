@@ -1,0 +1,343 @@
+// Elementos del DOM
+const elements = {
+  appContainer: document.getElementById('app'),
+  sidebar: document.querySelector('.sidebar'),
+  menuToggle: document.getElementById('menuToggle'),
+  newChatBtn: document.getElementById('newChatBtn'),
+  conversationsList: document.getElementById('conversationsList'),
+  chatContainer: document.querySelector('.chat-container'),
+  messagesContainer: document.querySelector('.messages'),
+  messageInput: document.getElementById('messageInput'),
+  sendButton: document.getElementById('sendButton'),
+  chatTitle: document.querySelector('.chat-title')
+};
+
+// Estado de la aplicación
+const state = {
+  currentConversationId: null,
+  conversations: [],
+  isTyping: false
+};
+
+// Inicialización
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('🚀 Inicializando aplicación...');
+  
+  // Cargar conversaciones
+  loadConversations();
+  
+  // Configurar event listeners
+  setupEventListeners();
+  
+  // Mostrar la aplicación
+  showApp();
+});
+
+// Configurar event listeners
+function setupEventListeners() {
+  // Enviar mensaje al hacer clic en el botón
+  elements.sendButton.addEventListener('click', sendMessage);
+  
+  // Enviar mensaje al presionar Enter
+  elements.messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+  
+  // Toggle del menú en móviles
+  if (elements.menuToggle) {
+    elements.menuToggle.addEventListener('click', () => {
+      elements.sidebar.classList.toggle('open');
+    });
+  }
+  
+  // Nuevo chat
+  elements.newChatBtn.addEventListener('click', createNewConversation);
+}
+
+// Mostrar la aplicación
+function showApp() {
+  document.body.style.visibility = 'visible';
+  
+  // Crear una conversación por defecto si no hay ninguna
+  if (state.conversations.length === 0) {
+    createNewConversation();
+  } else {
+    // Cargar la última conversación
+    const lastConversation = state.conversations[state.conversations.length - 1];
+    selectConversation(lastConversation.id);
+  }
+}
+
+// Cargar conversaciones
+async function loadConversations() {
+  try {
+    // Aquí iría la lógica para cargar conversaciones desde tu API o localStorage
+    // Por ahora, inicializamos con un array vacío
+    state.conversations = [];
+    renderConversations();
+  } catch (error) {
+    console.error('Error al cargar conversaciones:', error);
+  }
+}
+
+// Renderizar lista de conversaciones
+function renderConversations() {
+  if (!elements.conversationsList) return;
+  
+  if (state.conversations.length === 0) {
+    elements.conversationsList.innerHTML = `
+      <div class="empty-state">
+        <p>No hay conversaciones</p>
+        <button class="new-chat-btn" id="newChatBtn">
+          <span>+</span> Nueva conversación
+        </button>
+      </div>
+    `;
+    return;
+  }
+  
+  elements.conversationsList.innerHTML = state.conversations.map(conversation => `
+    <div class="conversation-item ${conversation.id === state.currentConversationId ? 'active' : ''}" 
+         data-id="${conversation.id}">
+      <div class="conversation-preview">
+        ${conversation.messages[0]?.content?.substring(0, 50) || 'Nueva conversación'}
+      </div>
+      <div class="conversation-date">
+        ${new Date(conversation.updatedAt).toLocaleString()}
+      </div>
+    </div>
+  `).join('');
+  
+  // Agregar event listeners a los elementos de la conversación
+  document.querySelectorAll('.conversation-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const conversationId = item.dataset.id;
+      selectConversation(conversationId);
+    });
+  });
+}
+
+// Seleccionar conversación
+function selectConversation(conversationId) {
+  const conversation = state.conversations.find(c => c.id === conversationId);
+  if (!conversation) return;
+  
+  state.currentConversationId = conversationId;
+  
+  // Actualizar la UI
+  elements.chatTitle.textContent = conversation.title || 'Nueva conversación';
+  
+  // Cargar mensajes
+  loadMessages(conversation.messages);
+  
+  // Actualizar la lista de conversaciones
+  renderConversations();
+  
+  // Cerrar el menú en móviles
+  if (window.innerWidth < 768) {
+    elements.sidebar.classList.remove('open');
+  }
+}
+
+// Cargar mensajes en el chat
+function loadMessages(messages = []) {
+  if (!elements.messagesContainer) return;
+  
+  // Limpiar mensajes actuales
+  elements.messagesContainer.innerHTML = '';
+  
+  if (messages.length === 0) {
+    // Mostrar mensaje de bienvenida si no hay mensajes
+    appendMessage('bot', '¡Hola! Soy tu asistente de IA. ¿En qué puedo ayudarte hoy?');
+    return;
+  }
+  
+  // Mostrar mensajes existentes
+  messages.forEach(message => {
+    appendMessage(message.role, message.content, { skipAnimation: true });
+  });
+  
+  // Hacer scroll al final
+  scrollToBottom();
+}
+
+// Crear nueva conversación
+function createNewConversation() {
+  const newConversation = {
+    id: 'conv-' + Date.now(),
+    title: 'Nueva conversación',
+    messages: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  
+  state.conversations.push(newConversation);
+  selectConversation(newConversation.id);
+  
+  // Guardar conversaciones
+  saveConversations();
+  
+  // Enfocar el input
+  elements.messageInput.focus();
+}
+
+// Enviar mensaje
+async function sendMessage() {
+  const message = elements.messageInput.value.trim();
+  if (!message || state.isTyping) return;
+  
+  // Obtener la conversación actual o crear una nueva
+  let conversation = state.conversations.find(c => c.id === state.currentConversationId);
+  if (!conversation) {
+    createNewConversation();
+    conversation = state.conversations[state.conversations.length - 1];
+  }
+  
+  // Agregar mensaje del usuario
+  const userMessage = {
+    role: 'user',
+    content: message,
+    timestamp: new Date().toISOString()
+  };
+  
+  // Actualizar la conversación
+  conversation.messages.push(userMessage);
+  conversation.updatedAt = new Date().toISOString();
+  
+  // Limpiar el input
+  elements.messageInput.value = '';
+  
+  // Actualizar la UI
+  appendMessage('user', message);
+  showTypingIndicator();
+  
+  try {
+    // Aquí iría la llamada a tu API de IA
+    // Por ahora, simulamos una respuesta después de un retraso
+    setTimeout(() => {
+      const botResponse = {
+        role: 'bot',
+        content: '¡Hola! Gracias por tu mensaje. Este es un ejemplo de respuesta del asistente de IA.',
+        timestamp: new Date().toISOString()
+      };
+      
+      // Agregar respuesta del bot a la conversación
+      conversation.messages.push(botResponse);
+      conversation.updatedAt = new Date().toISOString();
+      
+      // Actualizar la UI
+      hideTypingIndicator();
+      appendMessage('bot', botResponse.content);
+      
+      // Guardar conversaciones
+      saveConversations();
+      
+    }, 1500);
+    
+  } catch (error) {
+    console.error('Error al enviar mensaje:', error);
+    hideTypingIndicator();
+    
+    // Mostrar mensaje de error
+    appendMessage('bot', 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, inténtalo de nuevo.');
+  }
+}
+
+// Mostrar indicador de escritura
+function showTypingIndicator() {
+  state.isTyping = true;
+  
+  const typingElement = document.createElement('div');
+  typingElement.className = 'message bot typing-indicator';
+  typingElement.id = 'typing-indicator';
+  typingElement.innerHTML = `
+    <div class="bubble">
+      <span class="typing">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </span>
+    </div>
+  `;
+  
+  elements.messagesContainer.appendChild(typingElement);
+  scrollToBottom();
+}
+
+// Ocultar indicador de escritura
+function hideTypingIndicator() {
+  state.isTyping = false;
+  const typingElement = document.getElementById('typing-indicator');
+  if (typingElement) {
+    typingElement.remove();
+  }
+}
+
+// Agregar mensaje al chat
+function appendMessage(role, content, options = {}) {
+  if (!elements.messagesContainer) return null;
+  
+  const { skipAnimation = false } = options;
+  
+  // Crear elemento de mensaje
+  const messageElement = document.createElement('div');
+  messageElement.className = `message ${role} ${skipAnimation ? 'no-animation' : ''}`;
+  messageElement.setAttribute('role', role === 'user' ? 'sent' : 'received');
+  
+  // Crear burbuja de mensaje
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = content;
+  
+  // Si es un mensaje del bot, permitir HTML (para formateo)
+  if (role === 'bot') {
+    bubble.innerHTML = content; // ¡Cuidado con XSS en producción!
+  }
+  
+  messageElement.appendChild(bubble);
+  elements.messagesContainer.appendChild(messageElement);
+  
+  // Hacer scroll al final
+  if (!skipAnimation) {
+    scrollToBottom();
+  }
+  
+  return messageElement;
+}
+
+// Hacer scroll al final del chat
+function scrollToBottom() {
+  if (!elements.messagesContainer) return;
+  
+  // Usar requestAnimationFrame para asegurar que el DOM esté actualizado
+  requestAnimationFrame(() => {
+    elements.messagesContainer.scrollTop = elements.messagesContainer.scrollHeight;
+  });
+}
+
+// Guardar conversaciones
+function saveConversations() {
+  try {
+    // Aquí iría la lógica para guardar en tu API o localStorage
+    // Por ejemplo:
+    // localStorage.setItem('conversations', JSON.stringify(state.conversations));
+    
+    // Actualizar la lista de conversaciones
+    renderConversations();
+  } catch (error) {
+    console.error('Error al guardar conversaciones:', error);
+  }
+}
+
+// Hacer las funciones accesibles globalmente para depuración
+window.chatApp = {
+  state,
+  elements,
+  sendMessage,
+  createNewConversation,
+  selectConversation,
+  loadMessages
+};

@@ -1,0 +1,277 @@
+/* Tema oscuro para el chat */
+:root[data-theme="dark"] {
+  /* Colores principales */
+  --color-primary: #516BFF;
+  --color-primary-hover: #3f57e6;
+  --color-primary-light: #6d83ff;
+  --color-primary-dark: #3a4fcc;
+  
+  /* Fondo */
+  --color-bg: #0a1020;
+  --color-bg-alt: #0e1526;
+  --color-bg-panel: #11152b;
+  --color-bg-card: #1a1f39;
+  
+  /* Texto */
+  --color-text: #ffffff;
+  --color-text-muted: #9aa0b4;
+  --color-text-light: #cbd5ff;
+  --color-text-dark: #6b7280;
+  
+  /* Bordes */
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-light: rgba(255, 255, 255, 0.05);
+  --color-border-dark: rgba(0, 0, 0, 0.2);
+  
+  /* Estados */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+  
+  /* Sombras */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* Transiciones */
+  --transition-fast: 150ms ease-in-out;
+  --transition-normal: 250ms ease-in-out;
+  --transition-slow: 350ms ease-in-out;
+}
+
+/* Aplicar tema oscuro al cuerpo */
+body[data-theme="dark"] {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Estilos para el contenedor principal */
+.chat-container[data-theme="dark"] {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Estilos para los mensajes */
+.message[data-theme="dark"].user {
+  background-color: var(--color-primary);
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.message[data-theme="dark"].bot {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border-bottom-left-radius: 0.25rem;
+}
+
+/* Estilos para la barra de entrada */
+.chat-input-container[data-theme="dark"] {
+  background-color: var(--color-bg-panel);
+  border-top: 1px solid var(--color-border);
+}
+
+.chat-input[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.chat-input[data-theme="dark"]::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Estilos para la barra lateral */
+.sidebar[data-theme="dark"] {
+  background-color: var(--color-bg-panel);
+  border-right: 1px solid var(--color-border);
+}
+
+.conversation-item[data-theme="dark"] {
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.conversation-item[data-theme="dark"]:hover {
+  background-color: var(--color-bg-card);
+}
+
+.conversation-item[data-theme="dark"].active {
+  background-color: var(--color-bg-card);
+  border-left: 3px solid var(--color-primary);
+}
+
+/* Estilos para los botones */
+.btn[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn[data-theme="dark"]:hover {
+  background-color: var(--color-bg-alt);
+}
+
+.btn-primary[data-theme="dark"] {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.btn-primary[data-theme="dark"]:hover {
+  background-color: var(--color-primary-hover);
+}
+
+/* Estilos para los enlaces */
+a[data-theme="dark"] {
+  color: var(--color-primary-light);
+}
+
+a[data-theme="dark"]:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+/* Estilos para las tarjetas */
+.card[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+/* Estilos para los tooltips */
+.tooltip[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+}
+
+/* Estilos para las notificaciones */
+.notification[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border-left: 3px solid var(--color-primary);
+  box-shadow: var(--shadow);
+}
+
+/* Estilos para los modales */
+.modal[data-theme="dark"] .modal-content {
+  background-color: var(--color-bg-panel);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal[data-theme="dark"] .modal-header {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal[data-theme="dark"] .modal-footer {
+  border-top: 1px solid var(--color-border);
+}
+
+/* Estilos para los inputs y textareas */
+input[data-theme="dark"],
+textarea[data-theme="dark"],
+select[data-theme="dark"] {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+input[data-theme="dark"]:focus,
+textarea[data-theme="dark"]:focus,
+select[data-theme="dark"]:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(81, 107, 255, 0.2);
+}
+
+/* Estilos para los checkboxes y radios */
+input[type="checkbox"][data-theme="dark"],
+input[type="radio"][data-theme="dark"] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Estilos para las pestañas */
+.tabs[data-theme="dark"] .tab {
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.tabs[data-theme="dark"] .tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Estilos para los acordeones */
+.accordion[data-theme="dark"] .accordion-header {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.accordion[data-theme="dark"] .accordion-content {
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-top: none;
+}
+
+/* Estilos para los tooltips personalizados */
+[data-tooltip][data-theme="dark"]::before {
+  background-color: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow);
+}
+
+[data-tooltip][data-theme="dark"]::after {
+  border-top-color: var(--color-bg-card);
+}
+
+/* Estilos para los mensajes de error */
+.error-message[data-theme="dark"] {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  border-left: 3px solid var(--color-error);
+}
+
+/* Estilos para los mensajes de éxito */
+.success-message[data-theme="dark"] {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+  border-left: 3px solid var(--color-success);
+}
+
+/* Estilos para los mensajes de advertencia */
+.warning-message[data-theme="dark"] {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+  border-left: 3px solid var(--color-warning);
+}
+
+/* Estilos para los mensajes informativos */
+.info-message[data-theme="dark"] {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+  border-left: 3px solid var(--color-info);
+}
+
+/* Estilos para la barra de desplazamiento */
+::-webkit-scrollbar[data-theme="dark"] {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track[data-theme="dark"] {
+  background: var(--color-bg-alt);
+}
+
+::-webkit-scrollbar-thumb[data-theme="dark"] {
+  background: var(--color-bg-card);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb[data-theme="dark"]:hover {
+  background: var(--color-primary-dark);
+}

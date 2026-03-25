@@ -1,0 +1,304 @@
+/* Reset y estilos base */
+:root {
+  --primary: #516BFF;
+  --primary-hover: #3f57e6;
+  --bg: #0a1020;
+  --bg-panel: #11152b;
+  --bg-message-user: #283053;
+  --bg-message-bot: #1a1f39;
+  --text: #ffffff;
+  --text-secondary: #9aa0b4;
+  --border: rgba(255, 255, 255, 0.1);
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Asegurar que el body ocupe toda la pantalla */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Contenedor principal */
+#mainLayout {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  position: relative;
+  background: var(--bg);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  height: 100%;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+  z-index: 20;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  overflow-y: auto;
+}
+
+/* Botón de toggle del sidebar */
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  background: var(--primary);
+  border: none;
+  color: white;
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  z-index: 100;
+}
+
+/* Contenido principal del chat */
+.chat-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-left: 280px;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Cabecera del chat */
+.chat-header {
+  padding: 1rem 2rem;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  z-index: 10;
+  position: relative;
+}
+
+/* Área de mensajes */
+.chat-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Contenedor de mensajes */
+.chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+/* Mensajes */
+.message {
+  max-width: 80%;
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  line-height: 1.5;
+  position: relative;
+  animation: messageIn 0.3s ease-out forwards;
+  word-wrap: break-word;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: var(--bg-message-user);
+  border-bottom-right-radius: 0.25rem;
+  margin-left: auto;
+}
+
+.message.bot {
+  align-self: flex-start;
+  background: var(--bg-message-bot);
+  border-bottom-left-radius: 0.25rem;
+  margin-right: auto;
+}
+
+/* Animación de entrada de mensajes */
+@keyframes messageIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Área de entrada de mensajes */
+.chat-composer {
+  padding: 1.5rem;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+
+.chat-input-wrapper {
+  display: flex;
+  gap: 0.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  position: relative;
+}
+
+/* Input de mensaje */
+#userInput {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  resize: none;
+  max-height: 150px;
+  min-height: 50px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+/* Botón de enviar */
+#sendBtn {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+#sendBtn:hover {
+  background: var(--primary-hover);
+}
+
+/* Pantalla de introducción */
+.intro-screen {
+  text-align: center;
+  margin: auto;
+  max-width: 600px;
+  padding: 2rem;
+}
+
+.intro-screen h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.intro-screen p {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+/* Indicador de escritura */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--bg-message-bot);
+  border-radius: 1rem;
+  width: fit-content;
+  margin-bottom: 1.5rem;
+  align-self: flex-start;
+}
+
+.typing-indicator span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--text-secondary);
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+/* Scrollbar personalizada */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Estilos responsivos */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  
+  .sidebar.open {
+    transform: translateX(0);
+  }
+  
+  .chat-page {
+    margin-left: 0;
+  }
+  
+  .sidebar-toggle {
+    display: block;
+  }
+  
+  .message {
+    max-width: 90%;
+  }
+}
+
+/* Clase para ocultar elementos */
+.hidden {
+  display: none !important;
+}

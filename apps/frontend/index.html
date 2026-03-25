@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <title>Alma · Asistente IA para Ofertas Irresistibles</title>
+
+  <meta name="description" content="Alma es tu asistente IA para crear ofertas irresistibles y mensajes de venta de alto impacto, paso a paso." />
+  <meta name="theme-color" content="#020617" />
+
+  <!-- Open Graph básico -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Alma · Asistente IA para Ofertas Irresistibles" />
+  <meta property="og:description" content="Crea ofertas irresistibles y mensajes de venta con ayuda de Alma, tu asistente IA." />
+  <meta property="og:image" content="https://ofertas-de-exito-backend.vercel.app/og-image.png" />
+
+  <!-- Fuente -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Favicon (mismo logo de Alma) -->
+  <link rel="icon" type="image/svg+xml" href="alma-logo-new.svg" />
+
+  <!-- Estilos principales -->
+  <link href="css/styles.css?v=5" rel="stylesheet" />
+
+  <script>
+    // Configura la base de la API ANTES de cargar los JS
+    window.__API_BASE__ = 'https://ofertas-de-exito-backend.vercel.app/api/supax';
+    // Para desarrollo local podrías usar:
+    // window.__API_BASE__ = 'http://localhost:8788/api/supax';
+  </script>
+</head>
+<body>
+  <!-- PANTALLA 1: HERO DE BIENVENIDA -->
+  <section id="hero" class="hero" aria-label="Pantalla de bienvenida de Alma">
+    <div class="hero-card">
+      <div class="hero-logo-circle">
+        <img src="alma-logo-new.svg" alt="Logo de Alma" class="hero-logo-img" />
+      </div>
+      <h1 class="hero-title">Alma</h1>
+      <p class="hero-subtitle">
+        Ambición, Liderazgo, Motivo y Acción para tu futuro
+      </p>
+      <p class="hero-description">
+        Tu asistente IA para crear tu <strong>oferta irresistible</strong>.
+      </p>
+      <button class="btn btn-primary hero-start-btn" type="button">
+        Comenzar
+      </button>
+    </div>
+
+    <div class="beta-banner">
+      <span class="beta-pill">BETA</span>
+      <span class="beta-text">
+        Esta es una versión beta y puede contener errores. Para reportar un problema
+        o solicitar soporte, escribe a
+        <a href="mailto:soporte.alma.bot@gmail.com">soporte.alma.bot@gmail.com</a>.
+      </span>
+      <button class="beta-close" type="button" aria-label="Cerrar aviso" onclick="this.parentElement.style.display='none'">
+        ✕
+      </button>
+    </div>
+  </section>
+
+  <!-- PANTALLA 2: APP SHELL (CHAT) -->
+  <div class="app-shell" id="app-root">
+    <!-- Banda de versión (solo visible en mobile) -->
+    <div class="mobile-version-banner">
+      Alma · Asistente IA para Ofertas Irresistibles — v1.0
+    </div>
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="app-header-left">
+        <div class="app-brand">
+          <div class="app-logo-circle">
+            <img src="alma-logo-new.svg" alt="Logo de Alma" class="app-logo-img" />
+          </div>
+          <div class="app-brand-text">
+            <h2 class="app-title">Alma · Asistente</h2>
+            <p class="app-subtitle">Tu IA para crear ofertas irresistibles</p>
+          </div>
+        </div>
+        <div class="app-status">
+          <span class="status-dot"></span>
+          <span class="status-text">conectada</span>
+          <!-- Botón de menú mobile dentro del panel, al lado del punto verde -->
+          <button id="mobile-menu-toggle" class="mobile-menu-btn" aria-label="Abrir menú mobile">
+            <span>≡</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="app-header-right">
+        <button type="button" class="btn btn-secondary" id="new-conversation-btn" data-role="new-conversation">
+          Nueva
+        </button>
+        <button type="button" class="btn btn-ghost" id="clear-conversation-btn" data-role="clear-conversation">
+          Limpiar
+        </button>
+        <a href="https://portal-ia.vercel.app/app" class="btn btn-ghost" target="_blank" rel="noopener noreferrer">
+          volver al portal de ias
+        </a>
+      </div>
+    </header>
+
+    <!-- Menú mobile oculto (solo visible en pantallas pequeñas) -->
+    <div id="mobile-menu" class="mobile-menu" aria-label="Menú de acciones mobile">
+      <button id="mobile-new" class="mobile-menu-item" type="button">Nueva</button>
+      <button id="mobile-clear" class="mobile-menu-item" type="button">Limpiar</button>
+      <button id="mobile-back" class="mobile-menu-item" type="button">Volver al portal de IAs</button>
+    </div>
+
+    <!-- Contenido principal -->
+    <main class="app-main">
+      <!-- Barra lateral (info de Alma) -->
+      <aside class="app-sidebar" aria-label="Información de Alma">
+        <h3 class="sidebar-title">Sobre Alma</h3>
+        <p class="sidebar-text">
+          Alma te ayuda a diseñar y pulir ofertas irresistibles, mensajes de venta y estructuras completas
+          de comunicación para tus productos o servicios.
+        </p>
+        <div class="sidebar-section">
+          <h4 class="sidebar-subtitle">Cómo puede ayudarte</h4>
+          <ul class="sidebar-list">
+            <li>Definir tu propuesta de valor.</li>
+            <li>Crear mensajes claros y persuasivos.</li>
+            <li>Diseñar secuencias de comunicación.</li>
+            <li>Refinar textos que ya tengas.</li>
+          </ul>
+        </div>
+        <div class="sidebar-hint">
+          💡 Consejo: sé específico con tu oferta, tu público y tu objetivo.
+        </div>
+      </aside>
+
+      <!-- Panel de chat -->
+      <section class="chat-panel" aria-label="Chat con Alma">
+        <div class="chat-messages-wrapper">
+          <!-- Aquí tus scripts renderizan los mensajes -->
+          <div id="chat-messages" class="chat-messages" role="log" aria-live="polite">
+            <div id="typing-indicator" class="typing-indicator" aria-hidden="true">
+              <div class="typing-dots">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+              </div>
+              <span>Alma está pensando…</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input de mensaje -->
+        <form id="chat-form" class="chat-input-area" aria-label="Escribir mensaje a Alma">
+          <label for="chat-input" class="sr-only">Escribe tu mensaje</label>
+          <div class="chat-input-inner">
+            <textarea
+              id="chat-input"
+              class="chat-input"
+              name="message"
+              rows="1"
+              placeholder="Escribe tu mensaje... (Shift+Enter para salto de línea)"
+              autocomplete="off"
+            ></textarea>
+            <button type="submit" id="send-button" class="btn btn-primary">
+              Enviar
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p class="footer-text">
+        Alma · Asistente IA para Ofertas Irresistibles — v1.0
+      </p>
+    </footer>
+  </div>
+
+  <div id="mobile-sidebar-overlay" class="mobile-sidebar-overlay"></div>
+
+  <!-- Pequeño script SOLO para cambiar de pantalla (no toca tu lógica del chat) -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const hero = document.getElementById('hero');
+      const appRoot = document.getElementById('app-root');
+      const startBtn = document.querySelector('.hero-start-btn');
+
+      if (hero && appRoot && startBtn) {
+        startBtn.addEventListener('click', function () {
+          hero.style.display = 'none';
+          appRoot.classList.add('is-visible');
+          window.scrollTo({ top: 0, behavior: 'instant' });
+        });
+      }
+    });
+  </script>
+
+  <!-- JS de la app (NO CAMBIAR ORDEN NI RUTAS) -->
+  <script src="./js/app.state.js?v=4"></script>
+  <script src="./js/app.api.js?v=4"></script>
+  <script src="./js/app.ui.js?v=4"></script>
+  <script src="./js/app.main.js?v=4"></script>
+  <script>
+    const sidebar = document.querySelector('.app-sidebar');
+    const toggleBtn = document.getElementById('mobile-sidebar-toggle');
+    const overlay = document.getElementById('mobile-sidebar-overlay');
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        sidebar.classList.add('is-open');
+        overlay.classList.add('active');
+      });
+    }
+
+    if (overlay) {
+      overlay.addEventListener('click', () => {
+        sidebar.classList.remove('is-open');
+        overlay.classList.remove('active');
+      });
+    }
+  </script>
+
+  <!-- Lógica del menú mobile -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const menuBtn = document.getElementById('mobile-menu-toggle');
+      const menu = document.getElementById('mobile-menu');
+      const mobileNew = document.getElementById('mobile-new');
+      const mobileClear = document.getElementById('mobile-clear');
+      const mobileBack = document.getElementById('mobile-back');
+
+      const desktopNew = document.getElementById('new-conversation-btn');
+      const desktopClear = document.getElementById('clear-conversation-btn');
+      const desktopBackLink = document.querySelector('a[href*="portal-ia"]');
+
+      if (!menuBtn || !menu) return;
+
+      // Abrir/cerrar menú correctamente
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // evita clic duplicado
+        menu.classList.toggle('open');
+      });
+
+      // Cerrar al tocar fuera
+      document.addEventListener('click', (e) => {
+        if (!menu.contains(e.target) && !menuBtn.contains(e.target)) {
+          menu.classList.remove('open');
+        }
+      });
+
+      // Cerrar al seleccionar una opción
+      document.querySelectorAll('#mobile-menu button')
+        .forEach(btn => btn.addEventListener('click', () => {
+          menu.classList.remove('open');
+        }));
+
+      // Acciones específicas, replicando comportamiento de escritorio
+      if (mobileNew && desktopNew) {
+        mobileNew.addEventListener('click', () => {
+          desktopNew.click();
+        });
+      }
+
+      if (mobileClear && desktopClear) {
+        mobileClear.addEventListener('click', () => {
+          desktopClear.click();
+        });
+      }
+
+      if (mobileBack && desktopBackLink) {
+        mobileBack.addEventListener('click', () => {
+          // respeta el target="_blank" original
+          window.open(desktopBackLink.href, desktopBackLink.target || '_blank');
+        });
+      }
+    });
+  </script>
+</body>
+</html>

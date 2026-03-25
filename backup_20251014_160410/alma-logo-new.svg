@@ -1,0 +1,55 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradiente para el círculo exterior -->
+    <linearGradient id="circleGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E90FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0047AB;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Gradiente para la forma ondulada -->
+    <radialGradient id="waveGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#4169E1;stop-opacity:0.9" />
+      <stop offset="50%" style="stop-color:#1E90FF;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#0047AB;stop-opacity:1" />
+    </radialGradient>
+    
+    <!-- Sombra suave -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="1" result="offset"/>
+      <feFlood flood-color="#000" flood-opacity="0.1"/>
+      <feComposite in2="offset" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Círculo exterior -->
+  <circle cx="50" cy="50" r="47" 
+          fill="none" 
+          stroke="url(#circleGradient)" 
+          stroke-width="3"
+          filter="url(#softShadow)"/>
+  
+  <!-- Forma ondulada principal -->
+  <path d="M 20 35 
+           Q 35 25, 50 35
+           Q 65 45, 80 35
+           Q 75 50, 65 60
+           Q 50 70, 35 60
+           Q 25 50, 20 35 Z"
+        fill="url(#waveGradient)"
+        filter="url(#softShadow)"/>
+  
+  <!-- Forma ondulada secundaria para crear el efecto de profundidad -->
+  <path d="M 25 45
+           Q 40 35, 55 45
+           Q 70 55, 75 45
+           Q 70 60, 60 65
+           Q 45 70, 35 65
+           Q 30 55, 25 45 Z"
+        fill="url(#waveGradient)"
+        opacity="0.7"/>
+</svg>
