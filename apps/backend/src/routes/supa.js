@@ -63,7 +63,7 @@ router.post('/conversations', async (req, res) => {
 });
 
 // Obtener historial de una conversación
-router.get('/conversations/:id/messages', async (req, res) => {
+router.get('/conversations/:id/history', async (req, res) => {
   const conversationId = req.params.id;
   
   // Verify ownership
@@ -83,10 +83,11 @@ router.get('/conversations/:id/messages', async (req, res) => {
 // Enviar un mensaje
 router.post('/conversations/:id/messages', async (req, res) => {
   const conversationId = req.params.id;
-  const { content, client_msg_id } = req.body;
+  const content = req.body.content;
+  const client_msg_id = req.body.client_msg_id || req.body.clientMsgId;
 
   if (!content) return res.status(400).json({ error: 'Content is required' });
-  if (!client_msg_id) return res.status(400).json({ error: 'client_msg_id is required' });
+  if (!client_msg_id) return res.status(400).json({ error: 'client_msg_id or clientMsgId is required' });
 
   // Verify ownership
   const { data: conv } = await supabase.from('conversations').select('*').eq('id', conversationId).single();
