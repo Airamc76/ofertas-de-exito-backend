@@ -3,6 +3,10 @@ const router = express.Router();
 const { supabase } = require('../services/db');
 const { generateChatCompletion } = require('../services/ai');
 
+function genId(prefix = 'conv_') {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}`;
+}
+
 // Middleware para verificar y registrar el cliente
 router.use(async (req, res, next) => {
   const clientId = req.headers['x-client-id'];
@@ -39,10 +43,11 @@ router.get('/conversations', async (req, res) => {
 // Crear una conversación y mensaje inicial de Alma
 router.post('/conversations', async (req, res) => {
   const title = req.body.title || 'Nueva conversación';
+  const newId = genId();
 
   const { data: convData, error: convError } = await supabase
     .from('conversations')
-    .insert({ client_id: req.clientId, title })
+    .insert({ id: newId, client_id: req.clientId, title })
     .select()
     .single();
 
