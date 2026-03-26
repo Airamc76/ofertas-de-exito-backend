@@ -124,13 +124,32 @@ const App = () => {
     setIsTyping(true);
 
     try {
-      const data = await api.sendMessage(convId, userMsg);
-      if (data.data) {
-        setMessages(prev => [...prev, data.data]);
-        loadConversations();
-      }
+      // Prepare assistant message placeholder
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      
+      let fullContent = '';
+      await api.sendMessage(convId, userMsg, (chunk) => {
+        setIsTyping(false); // Stop typing animation once content starts
+        fullContent += chunk;
+        setMessages(prev => {
+          const newMsgs = [...prev];
+          newMsgs[newMsgs.length - 1].content = fullContent;
+          return newMsgs;
+        });
+      });
+      
+      loadConversations(); // Refresh list to get new titles if updated
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '**Vaya...** parece que hay un problema con la respuesta. ¿Reintentamos? 🔄' }]);
+      console.error('Send error:', err);
+      setMessages(prev => {
+          const newMsgs = [...prev];
+          if (newMsgs[newMsgs.length - 1].role === 'assistant' && !newMsgs[newMsgs.length - 1].content) {
+              newMsgs[newMsgs.length - 1].content = '**Vaya...** parece que hay un problema con la respuesta. ¿Reintentamos? 🔄';
+          } else {
+              newMsgs.push({ role: 'assistant', content: '**Vaya...** hubo un error de conexión. 🔄' });
+          }
+          return newMsgs;
+      });
     } finally {
       setIsTyping(false);
       setIsBusy(false);

@@ -59,7 +59,24 @@ async function generateChatCompletion(messages) {
   return response.choices[0]?.message?.content || "Lo siento, ha habido un error generando mi respuesta.";
 }
 
+async function generateChatStream(messages) {
+  const systemContent = await buildSystemPrompt();
+  
+  const formattedMessages = [
+    { role: 'system', content: systemContent },
+    ...messages.map(m => ({ role: m.role, content: m.content }))
+  ];
+
+  return await openai.chat.completions.create({
+    model: DEFAULT_MODEL,
+    messages: formattedMessages,
+    temperature: 0.7,
+    stream: true,
+  });
+}
+
 module.exports = {
   generateChatCompletion,
+  generateChatStream,
   buildSystemPrompt
 };

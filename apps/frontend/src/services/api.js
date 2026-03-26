@@ -35,12 +35,45 @@ export const api = {
     const res = await fetch(`${API_BASE}/conversations/${id}/history`, { headers });
     return res.json();
   },
-  async sendMessage(id, content) {
-    const res = await fetch(`${API_BASE}/conversations/${id}/messages`, {
+  async sendMessage(id, content, onChunk) {
+    const res = await fetch(`${API_BASE}/conversations/${id}/messages?stream=true`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ content, client_msg_id: 'msg_' + Date.now() })
     });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to send message');
+    }
+
+    if (onChunk) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.text) onChunk(parsed.text);
+            } catch (e) {
+              console.warn('Error parsing SSE chunk', e);
+            }
+          }
+        }
+      }
+      return { success: true };
+    }
+
     return res.json();
   },
   async updateTitle(id, title) {
