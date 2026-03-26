@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix apps/backend\" \"npm run dev --prefix apps/frontend\"",
+    "build": "npm install --prefix apps/frontend && npm run build --prefix apps/frontend",
+    "start": "npm run start --prefix apps/backend",
     "install-all": "npm install --prefix apps/backend && npm install --prefix apps/frontend"
   },
   "devDependencies": {

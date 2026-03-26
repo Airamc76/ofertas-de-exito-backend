@@ -14,12 +14,24 @@ const supaRoutes = require('./routes/supa');
 app.use('/api/supa', supaRoutes);
 app.use('/api/chat', supaRoutes); // Legacy compat
 
-// Servir Frontend
-app.use(express.static(path.join(__dirname, '../../frontend')));
+// Servir Frontend (build compilado de Vite)
+const frontendDist = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDist, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    }
+  }
+}));
 
-// Ruta principal para el frontend
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../frontend/index.html'));
+// SPA Fallback - todas las rutas sirven el index.html
+app.get('*', (req, res) => {
+  const indexPath = path.join(frontendDist, 'index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) {
+      res.status(404).json({ error: 'Frontend not built. Run npm run build in apps/frontend.' });
+    }
+  });
 });
 
 // Healthcheck
