@@ -1,0 +1,20 @@
+[build]
+  base = "apps/frontend"
+  command = "npm install && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Redirigir llamadas de API al backend de Render
+[[redirects]]
+  from = "/api/*"
+  to = "https://TU_BACKEND_RENDER.onrender.com/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback: todas las rutas sirven el index.html de React
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
