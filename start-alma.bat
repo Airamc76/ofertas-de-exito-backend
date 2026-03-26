@@ -1,0 +1,9 @@
+@echo off
+echo Iniciando Alma Assistant v2.1...
+echo.
+echo [1/2] Iniciando Backend en puerto 3000...
+start cmd /k "cd apps/backend && npm run dev"
+echo [2/2] Iniciando Frontend en puerto 5173...
+start cmd /k "cd apps/frontend && npm run dev"
+echo.
+echo ¡Todo listo! Abre http://localhost:5173 en tu navegador.

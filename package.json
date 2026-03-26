@@ -1,0 +1,11 @@
+{
+  "name": "ofertas-irresistibles-root",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix apps/backend\" \"npm run dev --prefix apps/frontend\"",
+    "install-all": "npm install --prefix apps/backend && npm install --prefix apps/frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

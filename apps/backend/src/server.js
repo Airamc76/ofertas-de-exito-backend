@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 
@@ -12,6 +13,14 @@ app.use(express.json());
 const supaRoutes = require('./routes/supa');
 app.use('/api/supa', supaRoutes);
 app.use('/api/chat', supaRoutes); // Legacy compat
+
+// Servir Frontend
+app.use(express.static(path.join(__dirname, '../../frontend')));
+
+// Ruta principal para el frontend
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../frontend/index.html'));
+});
 
 // Healthcheck
 app.get('/api/health', (req, res) => {

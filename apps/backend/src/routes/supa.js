@@ -98,9 +98,10 @@ router.post('/conversations/:id/messages', async (req, res) => {
   const { data: conv } = await supabase.from('conversations').select('*').eq('id', conversationId).single();
   if (!conv || conv.client_id !== req.clientId) return res.status(403).json({ error: 'Access denied' });
 
-  // Autogenerar título si es "Nueva conversación" (solo en el primer mensaje de usuario real)
-  if (conv.title === 'Nueva conversación') {
-    const newTitle = content.split(' ').slice(0, 5).join(' ') + '...';
+  // Autogenerar titulo si es el titulo por defecto (solo en el primer mensaje de usuario real)
+  if (conv.title === 'Nueva Oferta' || conv.title === 'Nueva conversacion' || conv.title === 'Nueva conversación') {
+    const words = content.trim().split(/\s+/).slice(0, 6).join(' ');
+    const newTitle = words.length > 3 ? words : content.slice(0, 40);
     await supabase.from('conversations').update({ title: newTitle }).eq('id', conversationId);
   }
 
@@ -142,6 +143,28 @@ router.post('/conversations/:id/messages', async (req, res) => {
   if (aiSavedError) return res.status(500).json({ error: aiSavedError.message });
 
   res.json({ data: savedMsg });
+});
+
+// Actualizar título de la conversación
+router.patch('/conversations/:id', async (req, res) => {
+  const conversationId = req.params.id;
+  const { title } = req.body;
+
+  if (!title) return res.status(400).json({ error: 'Title is required' });
+
+  // Verify ownership
+  const { data: conv } = await supabase.from('conversations').select('client_id').eq('id', conversationId).single();
+  if (!conv || conv.client_id !== req.clientId) return res.status(403).json({ error: 'Access denied' });
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .update({ title })
+    .eq('id', conversationId)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ data });
 });
 
 // Eliminar conversación
